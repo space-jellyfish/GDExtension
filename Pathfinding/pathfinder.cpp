@@ -10,7 +10,7 @@ two +-2^12 tiles cannot merge
 #include <vector>
 #include <queue>
 #include <unordered_map>
-#include <deque>
+#include <stack>
 
 using namespace godot;
 
@@ -23,7 +23,7 @@ void print_vector_2d(std::vector<std::vector<int>>& v);
 
 //treats ZERO and EMPTY as different level states
 //for max performance, use EMPTY in place of ZERO in level (if 0s can be safely ignored)
-Array Pathfinder::pathfind(int search_type, const Array& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind(int search_type, const Array& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 
 	//wall/membrane check
 	std::vector<std::vector<int>> level_vec = array_to_vector_2d(level);
@@ -38,53 +38,81 @@ Array Pathfinder::pathfind(int search_type, const Array& level, Vector2i start, 
 	}
 
     switch(search_type) {
-		case SearchType::PERFECT:
-			return pathfind_astar(level_vec, start, end, tile_push_limit, is_player, tile_pow_max);
+		case SearchType::IDASTAR:
+			return pathfind_idastar(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+		case SearchType::ASTAR:
+			return pathfind_astar(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 		case SearchType::STRAIGHT:
-			return pathfind_straight(level_vec, start, end, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_straight(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 		case SearchType::MERGE_GREEDY:
-			return pathfind_merge_greedy(level_vec, start, end, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_merge_greedy(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 		case SearchType::MERGE_LARGE_TO_SMALL:
-			return pathfind_merge_lts(level_vec, start, end, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_merge_lts(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 		case SearchType::MERGE_SMALL_TO_LARGE:
-			return pathfind_merge_stl(level_vec, start, end, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_merge_stl(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 		default:
-			return pathfind_astar(level_vec, start, end, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_idastar(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 	}
 }
 
-Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max) {
-	
+Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+
 	Vector2i level_size(level[0].size(), level.size());
-	std::priority_queue<LevelState*, std::vector<LevelState*>, LevelStateComparer> wavefront;
-	std::unordered_map<std::pair<Vector2i, std::vector<std::vector<int>>>, LevelState*, LevelStateHasher, LevelStateEquator> states_map;
-	
-	//add first level state
-	LevelState* first = new LevelState(level_size);
-	first->pos = start;
-	first->g = 0;
-	first->h = heuristic(start, end);
-	first->f = first->g + first->h;
-	first->level = level;
-	states_map[std::make_pair(first->pos, first->level)] = first;
-	wavefront.push(first);
+	std::stack<LevelState*, std::vector<LevelState*>> stack;
+	std::unordered_map<std::pair<Vector2i, std::vector<std::vector<int>>>, LevelState*, LevelStateHasher, LevelStateEquator> visited;
+	int root_h = heuristic(start, end);
+	int threshold = root_h;
+	int next_threshold = std::numeric_limits<int>::max();
 
-	//expand until end reaches top of queue
-	while (!wavefront.empty()) {
-		//get top
-		LevelState* curr = wavefront.top();
-		wavefront.pop();
+	//add root level state
+	LevelState* root = new LevelState(level_size);
+	root->pos = start;
+	root->g = 0;
+	root->h = root_h;
+	root->f = root_h;
+	root->level = level;
+	visited[std::make_pair(start, level)] = root;
+	stack.push(root);
 
-		std::cout << "PF EXPANDING POS: " << curr->pos.x << ", " << curr->pos.y << std::endl;
+	while (!stack.empty() || next_threshold != std::numeric_limits<int>::max()) {
+		if (stack.empty()) {
+			//delete old level states
+			for (auto entry : visited) {
+				delete entry.second;
+			}
+			visited.clear();
+
+			//add first level state
+			LevelState* first = new LevelState(level_size);
+			first->pos = start;
+			first->g = 0;
+			first->h = root_h;
+			first->f = root_h;
+			first->level = level;
+			visited[std::make_pair(start, level)] = first;
+			stack.push(first);
+
+			//update threshold
+			threshold = next_threshold;
+			next_threshold = std::numeric_limits<int>::max();
+			UtilityFunctions::print("PF NEW ITERATION");
+		}
+		LevelState* curr = stack.top();
+		stack.pop();
 
 		//check if end
 		if (curr->pos == end) {
 			UtilityFunctions::print("PF FOUND END");
 			Array ans = curr->trace_path();
-			for (auto entry : states_map) {
+			for (auto entry : visited) {
 				delete entry.second;
 			}
 			return ans;
+		}
+
+		//check depth
+		if (curr->g >= max_depth) {
+			continue;
 		}
 
 		//add/update neighbors
@@ -107,8 +135,94 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 				}
 				std::pair<Vector2i, std::vector<std::vector<int>>> key(curr->pos + dir, temp_level);
 
-				if (states_map.count(key)) { //level state exists
-					LevelState* temp = states_map.at(key);
+				if (!visited.count(key)) { //create new level state
+					LevelState* temp = new LevelState(level_size);
+					temp->pos = curr->pos + dir;
+					temp->prev = curr;
+					temp->prev_action = action;
+					temp->g = curr->g + 1;
+					temp->h = heuristic(temp->pos, end);
+					temp->f = temp->g + temp->h;
+					temp->level = temp_level;
+					visited[key] = temp;
+
+					if (temp->f <= threshold) { //push level state
+						stack.push(temp);
+					}
+					else { //update next threshold
+						next_threshold = std::min(next_threshold, temp->f);
+					}
+				}
+			}
+		} //end add/update neighbors
+	}
+
+	UtilityFunctions::print("PF NO PATH FOUND");
+	for (auto entry : visited) {
+		delete entry.second;
+	}
+	return Array();
+}
+
+Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+	
+	Vector2i level_size(level[0].size(), level.size());
+	std::priority_queue<LevelState*, std::vector<LevelState*>, LevelStateComparer> wavefront;
+	std::unordered_map<std::pair<Vector2i, std::vector<std::vector<int>>>, LevelState*, LevelStateHasher, LevelStateEquator> visited;
+	
+	//add first level state
+	LevelState* first = new LevelState(level_size);
+	first->pos = start;
+	first->g = 0;
+	first->h = heuristic(start, end);
+	first->f = first->g + first->h;
+	first->level = level;
+	visited[std::make_pair(start, level)] = first;
+	wavefront.push(first);
+
+	//expand until end reaches top of queue
+	while (!wavefront.empty()) {
+		//get top
+		LevelState* curr = wavefront.top();
+		wavefront.pop();
+
+		//check if end
+		if (curr->pos == end) {
+			UtilityFunctions::print("PF FOUND END");
+			Array ans = curr->trace_path();
+			for (auto entry : visited) {
+				delete entry.second;
+			}
+			return ans;
+		}
+
+		//check depth
+		if (curr->g >= max_depth) {
+			continue;
+		}
+
+		//add/update neighbors
+		int curr_val = curr->level[curr->pos.y][curr->pos.x] % StuffId::MEMBRANE; //tile value
+		bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::ZERO && curr_val != StuffId::POW_OFFSET);
+
+		for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
+			if (action_type == ActionType::SPLIT && !can_split) {
+				continue;
+			}
+
+			//dir is (x, y), action is (x, y, *)
+			for (Vector2i dir : {Vector2i(1, 0), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(0, 1)}) {
+				Vector3i action = Vector3i(dir.x, dir.y, action_type);
+				std::vector<std::vector<int>> temp_level = try_action(curr->level, curr->pos, action, tile_push_limit, is_player, tile_pow_max);
+				//UtilityFunctions::print("PF TEMP LEVEL SIZE: ", (int)temp_level.size());
+
+				if (temp_level.empty()) { //action not possible
+					continue;
+				}
+				std::pair<Vector2i, std::vector<std::vector<int>>> key(curr->pos + dir, temp_level);
+
+				if (visited.count(key)) { //level state exists
+					LevelState* temp = visited.at(key);
 
 					//if path better, update heuristic and prev
 					if (curr->g + 1 < temp->g) {
@@ -130,7 +244,7 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 					temp->h = heuristic(temp->pos, end);
 					temp->f = temp->g + temp->h;
 					temp->level = temp_level;
-					states_map[key] = temp;
+					visited[key] = temp;
 					wavefront.push(temp);
 				}
 			}
@@ -138,25 +252,25 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 	} //end search
 
 	UtilityFunctions::print("PF NO PATH FOUND");
-	for (auto entry : states_map) {
+	for (auto entry : visited) {
 		delete entry.second;
 	}
 	return Array(); //no path found
 }
 
-Array Pathfinder::pathfind_straight(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind_straight(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 	return Array();
 }
 
-Array Pathfinder::pathfind_merge_greedy(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind_merge_greedy(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 	return Array();
 }
 
-Array Pathfinder::pathfind_merge_lts(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind_merge_lts(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 	return Array();
 }
 
-Array Pathfinder::pathfind_merge_stl(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind_merge_stl(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 	return Array();
 }
 

@@ -125,6 +125,7 @@
     "algorithm": "cpp",
     "functional": "cpp",
     "iterator": "cpp",
-    "utility": "cpp"
+    "utility": "cpp",
+    "stack": "cpp"
   }
 }

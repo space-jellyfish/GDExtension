@@ -33,7 +33,8 @@ enum ActionType {
 };
 
 enum SearchType {
-	PERFECT = 0,
+	IDASTAR = 0,
+	ASTAR,
 	STRAIGHT,
 	MERGE_GREEDY,
 	MERGE_LARGE_TO_SMALL,
@@ -44,12 +45,13 @@ class Pathfinder : public Node {
 	GDCLASS(Pathfinder, Node);
 	
 public:
-    Array pathfind(int search_type, const Array& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max);
-	Array pathfind_astar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max);
-	Array pathfind_straight(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max);
-	Array pathfind_merge_greedy(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max);
-	Array pathfind_merge_lts(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max);
-	Array pathfind_merge_stl(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max);
+    Array pathfind(int search_type, const Array& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	Array pathfind_idastar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	Array pathfind_astar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	Array pathfind_straight(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	Array pathfind_merge_greedy(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	Array pathfind_merge_lts(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	Array pathfind_merge_stl(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
 	std::vector<std::vector<int>> try_action(std::vector<std::vector<int>> level, Vector2i pos, Vector3i action, int tile_push_limit, bool is_player, int tile_pow_max);
 	std::vector<std::vector<int>> try_slide(std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, int tile_push_limit, bool is_player, int tile_pow_max);
 	std::vector<std::vector<int>> try_split(std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, int tile_push_limit, bool is_player, int tile_pow_max);
@@ -62,7 +64,7 @@ protected:
 };
 
 struct LevelState {
-	Vector2i pos = Vector2i(0, 0); //of tile
+	Vector2i pos = Vector2i(0, 0);
 	LevelState* prev = NULL;
 	Vector3i prev_action = Vector3i(0, 0, 0);
 

@@ -125,3 +125,35 @@ template <typename T> std::vector<std::vector<T>> typed_array_to_vector_2d(Typed
 		}
 	}
 */
+
+/*
+		if (stack.empty()) {
+			//move pruned elements into stack
+			std::vector<LevelState*> temp;
+			temp.reserve(pruned.size());
+			while (!pruned.empty()) {
+				temp.push_back(pruned.top());
+				pruned.pop();
+			}
+			for (int i=temp.size()-1; i >= 0; --i) {
+				stack.push(temp[i]);
+			}
+
+			//update threshold
+			threshold = temp.front()->f;
+			UtilityFunctions::print("PF NEW ITERATION");
+		}
+*/
+
+/*
+				if (visited.count(key)) { //level state exists
+					temp = visited.at(key);
+
+					if (curr->g + 1 < temp->g) { //level state exists
+						temp->g = curr->g + 1;
+						temp->f = temp->g + temp->h;
+						temp->prev = curr;
+						temp->prev_action = action;
+					}
+				}
+*/
