@@ -1,0 +1,20 @@
+{
+  "configurations": [
+    {
+      "name": "macos-clang-x64",
+      "includePath": [
+        "${workspaceFolder}/godot-cpp/gdextension/**",
+        "${workspaceFolder}/godot-cpp/include/**",
+        "${workspaceFolder}/godot-cpp/gen/include/**"
+      ],
+      "compilerPath": "/usr/bin/clang",
+      "cStandard": "${default}",
+      "cppStandard": "c++11",
+      "intelliSenseMode": "macos-clang-x64",
+      "compilerArgs": [
+        ""
+      ]
+    }
+  ],
+  "version": 4
+}
