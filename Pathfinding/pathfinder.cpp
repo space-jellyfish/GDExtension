@@ -18,6 +18,7 @@ std::vector<int> array_to_vector_1d(const Array& arr);
 std::vector<std::vector<int>> array_to_vector_2d(const Array& arr);
 Array vector_to_array_1d(std::vector<int>& vec);
 Array vector_to_array_2d(std::vector<std::vector<int>>& vec);
+Array vector_to_array_1d_reversed(std::vector<Vector3i>& vec);
 void print_vector_2d(std::vector<std::vector<int>>& v);
 
 
@@ -339,11 +340,12 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 			//push 0?
 			if (tile_push_count != tile_push_limit && next_tile_val == StuffId::ZERO) {
 				Vector2i temp_pos = next_pos + dir;
-				int temp_val = level[temp_pos.y][temp_pos.x];
-				if (temp_val == StuffId::EMPTY || temp_val == StuffId::SAVEPOINT || temp_val == StuffId::GOAL) {
-					level[temp_pos.y][temp_pos.x] += StuffId::ZERO;
-				}
-				//else 0 gets popped
+				if (within_bounds(temp_pos)) {
+					int temp_val = level[temp_pos.y][temp_pos.x];
+					if (temp_val == StuffId::EMPTY || temp_val == StuffId::SAVEPOINT || temp_val == StuffId::GOAL) {
+						level[temp_pos.y][temp_pos.x] += StuffId::ZERO;
+					}
+				} //else 0 gets popped
 			}
 
 			//set id at merge location
@@ -485,15 +487,15 @@ LevelState::LevelState(Vector2i level_size) {
 }
 
 Array LevelState::trace_path() {
-	Array ans;
+	std::vector<Vector3i> ans_vec;
 	LevelState* curr = this;
 
 	while (curr->prev != NULL) {
-		ans.push_front(curr->prev_action);
+		ans_vec.push_back(curr->prev_action);
 		curr = curr->prev;
 	}
-	UtilityFunctions::print("PF TRACED PATH SIZE: ", ans.size());
-	return ans;
+	UtilityFunctions::print("PF TRACED PATH SIZE: ", ans_vec.size());
+	return vector_to_array_1d_reversed(ans_vec);
 }
 
 void Pathfinder::_bind_methods() {
@@ -534,6 +536,15 @@ Array vector_to_array_2d(std::vector<std::vector<int>>& vec) {
 	Array ans;
 	for (std::vector<int>& row : vec) {
 		ans.push_back(vector_to_array_1d(row));
+	}
+	return ans;
+}
+
+Array vector_to_array_1d_reversed(std::vector<Vector3i>& vec) {
+	Array ans;
+	ans.resize(vec.size());
+	for (int i=0; i < vec.size(); ++i) {
+		ans[i] = vec[vec.size() - 1 - i];
 	}
 	return ans;
 }
