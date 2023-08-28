@@ -18,8 +18,6 @@ std::vector<int> array_to_vector_1d(const Array& arr);
 std::vector<std::vector<int>> array_to_vector_2d(const Array& arr);
 Array vector_to_array_1d(std::vector<int>& vec);
 Array vector_to_array_2d(std::vector<std::vector<int>>& vec);
-Array vector_to_array_1d_reversed(std::vector<Vector3i>& vec);
-void print_vector_2d(std::vector<std::vector<int>>& v);
 
 
 //treats ZERO and EMPTY as different level states
@@ -37,6 +35,8 @@ Array Pathfinder::pathfind(int search_type, const Array& level, Vector2i start, 
 	if (is_enclosed(level_vec, end, start, is_player)) {
 		return Array();
 	}
+
+	//generate random numbers for hashing
 
     switch(search_type) {
 		case SearchType::IDASTAR:
@@ -59,120 +59,156 @@ Array Pathfinder::pathfind(int search_type, const Array& level, Vector2i start, 
 Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 
 	Vector2i level_size(level[0].size(), level.size());
-	std::stack<LevelState*, std::vector<LevelState*>> stack;
-	std::unordered_map<std::pair<Vector2i, std::vector<std::vector<int>>>, LevelState*, LevelStateHasher, LevelStateEquator> visited;
+	std::stack<LevelStateDFS*, std::vector<LevelStateDFS*>> stack;
+	Array path;
+	std::unordered_map<std::pair<Vector2i, std::vector<std::vector<int>>>, LevelStateDFS*, LevelStateHasher, LevelStateEquator> in_path;
 	int root_h = heuristic(start, end);
 	int threshold = root_h;
 	int next_threshold = std::numeric_limits<int>::max();
 
 	//add root level state
-	LevelState* root = new LevelState(level_size);
+	LevelStateDFS* root = new LevelStateDFS(level_size);
 	root->pos = start;
 	root->g = 0;
 	root->h = root_h;
 	root->f = root_h;
 	root->level = level;
-	visited[std::make_pair(start, level)] = root;
+	in_path[std::make_pair(start, level)] = root;
 	stack.push(root);
 
 	while (!stack.empty() || next_threshold != std::numeric_limits<int>::max()) {
 		if (stack.empty()) {
-			//delete old level states
-			for (auto entry : visited) {
-				delete entry.second;
-			}
-			visited.clear();
-
 			//add first level state
-			LevelState* first = new LevelState(level_size);
+			LevelStateDFS* first = new LevelStateDFS(level_size);
 			first->pos = start;
 			first->g = 0;
 			first->h = root_h;
 			first->f = root_h;
 			first->level = level;
-			visited[std::make_pair(start, level)] = first;
+			in_path[std::make_pair(start, level)] = first;
 			stack.push(first);
 
 			//update threshold
 			threshold = next_threshold;
 			next_threshold = std::numeric_limits<int>::max();
-			UtilityFunctions::print("PF NEW ITERATION");
+			UtilityFunctions::print("PF NEW ITERATION, threshold = ", threshold);
 		}
-		LevelState* curr = stack.top();
+		//remove from stack
+		LevelStateDFS* curr = stack.top();
 		stack.pop();
+
+		//add to path
+		if (curr->g) {
+			path.push_back(curr->prev_action);
+		}
+		in_path[std::make_pair(curr->pos, curr->level)] = curr;
 
 		//check if end
 		if (curr->pos == end) {
-			UtilityFunctions::print("PF FOUND END");
-			Array ans = curr->trace_path();
-			for (auto entry : visited) {
+			UtilityFunctions::print("PF FOUND PATH");
+			while (!stack.empty()) {
+				delete stack.top();
+				stack.pop();
+			}
+			for (auto& entry : in_path) {
 				delete entry.second;
 			}
-			return ans;
+			return path;
 		}
 
 		//check depth
-		if (curr->g >= max_depth) {
-			continue;
-		}
+		if (curr->g < max_depth) {
+			//find neighbors
+			int curr_val = curr->level[curr->pos.y][curr->pos.x] % StuffId::MEMBRANE; //tile value
+			bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::ZERO && curr_val != StuffId::POW_OFFSET);
+			std::vector<LevelStateDFS*> neighbors;
 
-		//add/update neighbors
-		int curr_val = curr->level[curr->pos.y][curr->pos.x] % StuffId::MEMBRANE; //tile value
-		bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::ZERO && curr_val != StuffId::POW_OFFSET);
-
-		for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
-			if (action_type == ActionType::SPLIT && !can_split) {
-				continue;
-			}
-
-			//dir is (x, y), action is (x, y, *)
-			for (Vector2i dir : {Vector2i(1, 0), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(0, 1)}) {
-				Vector3i action = Vector3i(dir.x, dir.y, action_type);
-				std::vector<std::vector<int>> temp_level = try_action(curr->level, curr->pos, action, tile_push_limit, is_player, tile_pow_max);
-				//UtilityFunctions::print("PF TEMP LEVEL SIZE: ", (int)temp_level.size());
-
-				if (temp_level.empty()) { //action not possible
+			for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
+				if (action_type == ActionType::SPLIT && !can_split) {
 					continue;
 				}
-				std::pair<Vector2i, std::vector<std::vector<int>>> key(curr->pos + dir, temp_level);
 
-				if (!visited.count(key)) { //create new level state
-					LevelState* temp = new LevelState(level_size);
-					temp->pos = curr->pos + dir;
-					temp->prev = curr;
-					temp->prev_action = action;
-					temp->g = curr->g + 1;
-					temp->h = heuristic(temp->pos, end);
-					temp->f = temp->g + temp->h;
-					temp->level = temp_level;
-					visited[key] = temp;
+				//dir is (x, y), action is (x, y, *)
+				for (Vector2i dir : {Vector2i(1, 0), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(0, 1)}) {
+					Vector3i action = Vector3i(dir.x, dir.y, action_type);
+					std::vector<std::vector<int>> temp_level = try_action(curr->level, curr->pos, action, tile_push_limit, is_player, tile_pow_max);
 
-					if (temp->f <= threshold) { //push level state
-						stack.push(temp);
+					if (temp_level.empty()) { //action not possible
+						continue;
 					}
-					else { //update next threshold
-						next_threshold = std::min(next_threshold, temp->f);
+					std::pair<Vector2i, std::vector<std::vector<int>>> key(curr->pos + dir, temp_level);
+
+					if (!in_path.count(key)) { //create new level state
+						LevelStateDFS* temp = new LevelStateDFS(level_size);
+						temp->pos = curr->pos + dir;
+						temp->prev = curr;
+						temp->prev_action = action;
+						temp->g = curr->g + 1;
+						temp->h = heuristic(temp->pos, end);
+						temp->f = temp->g + temp->h;
+						temp->level = temp_level;
+
+						//add level state
+						if (temp->f <= threshold) {
+							neighbors.push_back(temp);
+						}
+						else if (temp->f < next_threshold) { //update next threshold
+							next_threshold = temp->f;
+						}
 					}
 				}
+			} //end find neighbors
+
+			//add neighbors (in order)
+			std::sort(neighbors.begin(), neighbors.end(), [](LevelStateDFS* first, LevelStateDFS* second) {
+				if (first->f < second->f) {
+					return true;
+				}
+				if (first->f > second->f) {
+					return false;
+				}
+				return first->g > second->g;
+			});
+			for (LevelStateDFS* temp : neighbors) {
+				stack.push(temp);
+				++curr->child_count;
 			}
-		} //end add/update neighbors
+		}
+
+		//backtrack (delete childless level states)
+		while (curr != NULL && curr->child_count == 0) {
+			//get parent pointer
+			LevelStateDFS* parent = curr->prev;
+
+			//delete curr
+			if (!path.is_empty()) {
+				path.pop_back();
+			}
+			in_path.erase(std::make_pair(curr->pos, curr->level));
+			delete curr;
+
+			//decrement parent child_count
+			if (parent != NULL) {
+				--parent->child_count;
+			}
+
+			//update curr
+			curr = parent;
+		}
 	}
 
 	UtilityFunctions::print("PF NO PATH FOUND");
-	for (auto entry : visited) {
-		delete entry.second;
-	}
 	return Array();
 }
 
 Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 	
 	Vector2i level_size(level[0].size(), level.size());
-	std::priority_queue<LevelState*, std::vector<LevelState*>, LevelStateComparer> wavefront;
-	std::unordered_map<std::pair<Vector2i, std::vector<std::vector<int>>>, LevelState*, LevelStateHasher, LevelStateEquator> visited;
+	std::priority_queue<LevelStateBFS*, std::vector<LevelStateBFS*>, LevelStateComparer> wavefront;
+	std::unordered_map<std::pair<Vector2i, std::vector<std::vector<int>>>, LevelStateBFS*, LevelStateHasher, LevelStateEquator> visited;
 	
 	//add first level state
-	LevelState* first = new LevelState(level_size);
+	LevelStateBFS* first = new LevelStateBFS(level_size);
 	first->pos = start;
 	first->g = 0;
 	first->h = heuristic(start, end);
@@ -184,14 +220,14 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 	//expand until end reaches top of queue
 	while (!wavefront.empty()) {
 		//get top
-		LevelState* curr = wavefront.top();
+		LevelStateBFS* curr = wavefront.top();
 		wavefront.pop();
 
 		//check if end
 		if (curr->pos == end) {
-			UtilityFunctions::print("PF FOUND END");
+			UtilityFunctions::print("PF FOUND PATH");
 			Array ans = curr->trace_path();
-			for (auto entry : visited) {
+			for (auto& entry : visited) {
 				delete entry.second;
 			}
 			return ans;
@@ -223,7 +259,7 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 				std::pair<Vector2i, std::vector<std::vector<int>>> key(curr->pos + dir, temp_level);
 
 				if (visited.count(key)) { //level state exists
-					LevelState* temp = visited.at(key);
+					LevelStateBFS* temp = visited.at(key);
 
 					//if path better, update heuristic and prev
 					if (curr->g + 1 < temp->g) {
@@ -237,7 +273,7 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 					}
 				}
 				else { //create new level state
-					LevelState* temp = new LevelState(level_size);
+					LevelStateBFS* temp = new LevelStateBFS(level_size);
 					temp->pos = curr->pos + dir;
 					temp->prev = curr;
 					temp->prev_action = action;
@@ -253,7 +289,7 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 	} //end search
 
 	UtilityFunctions::print("PF NO PATH FOUND");
-	for (auto entry : visited) {
+	for (auto& entry : visited) {
 		delete entry.second;
 	}
 	return Array(); //no path found
@@ -474,6 +510,12 @@ int Pathfinder::heuristic(Vector2i pos, Vector2i goal) {
 	return abs(pos.x - goal.x) + abs(pos.y - goal.y);
 }
 
+int z_hash(const Vector2i pos, const std::vector<std::vector<int>>& level) {
+	int hash = 0;
+
+	return hash;
+}
+
 void Pathfinder::testing() {
 	UtilityFunctions::print("PF TESTING");
 	while (1);
@@ -481,21 +523,24 @@ void Pathfinder::testing() {
 
 LevelState::LevelState(Vector2i level_size) {
 	level.resize(level_size.y);
-	for (auto row : level) {
+	for (auto& row : level) {
 		row.reserve(level_size.x);
 	}
 }
 
-Array LevelState::trace_path() {
-	std::vector<Vector3i> ans_vec;
-	LevelState* curr = this;
+Array LevelStateBFS::trace_path() {
+	Array ans;
+	ans.resize(this->g);
+	int index = this->g - 1;
+	LevelStateBFS* curr = this;
 
 	while (curr->prev != NULL) {
-		ans_vec.push_back(curr->prev_action);
+		ans[index] = curr->prev_action;
 		curr = curr->prev;
+		--index;
 	}
-	UtilityFunctions::print("PF TRACED PATH SIZE: ", ans_vec.size());
-	return vector_to_array_1d_reversed(ans_vec);
+	UtilityFunctions::print("PF TRACED PATH SIZE: ", ans.size());
+	return ans;
 }
 
 void Pathfinder::_bind_methods() {
@@ -538,31 +583,6 @@ Array vector_to_array_2d(std::vector<std::vector<int>>& vec) {
 		ans.push_back(vector_to_array_1d(row));
 	}
 	return ans;
-}
-
-Array vector_to_array_1d_reversed(std::vector<Vector3i>& vec) {
-	Array ans;
-	ans.resize(vec.size());
-	for (int i=0; i < vec.size(); ++i) {
-		ans[i] = vec[vec.size() - 1 - i];
-	}
-	return ans;
-}
-
-void print_vector_2d(std::vector<std::vector<int>>& v) {
-	std::string s = "[";
-	for (std::vector<int>& row : v) {
-		s += "[";
-		for (int col_itr=0; col_itr < row.size(); ++col_itr) {
-			s += std::to_string(row[col_itr]);
-			if (col_itr != row.size() - 1) {
-				s += ", ";
-			}
-		}
-		s += "]";
-	}
-	s += "]";
-	UtilityFunctions::print(s.c_str());
 }
 
 /*

@@ -157,3 +157,14 @@ template <typename T> std::vector<std::vector<T>> typed_array_to_vector_2d(Typed
 					}
 				}
 */
+
+/*
+Array vector_to_array_1d_reversed(std::vector<Vector3i>& vec) {
+	Array ans;
+	ans.resize(vec.size());
+	for (int i=0; i < vec.size(); ++i) {
+		ans[i] = vec[vec.size() - 1 - i];
+	}
+	return ans;
+}
+*/

@@ -57,6 +57,7 @@ public:
 	std::vector<std::vector<int>> try_split(std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, int tile_push_limit, bool is_player, int tile_pow_max);
 	bool is_enclosed(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, bool is_player);
 	int heuristic(Vector2i pos, Vector2i goal);
+	int z_hash(const Vector2i pos, const std::vector<std::vector<int>>& level);
 	void testing();
 
 protected:
@@ -65,22 +66,32 @@ protected:
 
 struct LevelState {
 	Vector2i pos = Vector2i(0, 0);
-	LevelState* prev = NULL;
 	Vector3i prev_action = Vector3i(0, 0, 0);
-
 	//heuristics
 	int g = std::numeric_limits<int>::max();
 	int h = std::numeric_limits<int>::max();
 	int f = std::numeric_limits<int>::max();
-
+	//level
 	std::vector<std::vector<int>> level;
 
-
 	LevelState(Vector2i level_size);
+};
+
+struct LevelStateBFS : LevelState {
+	LevelStateBFS* prev = NULL;
+
+	using LevelState::LevelState;
 	Array trace_path();
 };
 
-//use f heuristic for sorting priority queue
+struct LevelStateDFS : LevelState {
+	LevelStateDFS* prev = NULL;
+	int child_count = 0;
+
+	using LevelState::LevelState;
+};
+
+//if f tied, use g; higher g indicates higher confidence
 struct LevelStateComparer {
 	bool operator() (LevelState* first, LevelState* second) {
 		if (first->f > second->f) {

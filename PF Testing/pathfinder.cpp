@@ -12,91 +12,56 @@ two +-2^12 tiles cannot merge
 #include <queue>
 #include <unordered_map>
 #include <stack>
+#include <cstdlib>
 
+void print_vector_2d(std::vector<std::vector<int>>& v);
+void print_vector_2d(std::vector<std::vector<int>>& v, int x0, int y0, int x1, int y1);
+void print_dir(std::tuple<int, int> dir, std::string extra);
+void print_pos(std::tuple<int, int> dir, std::string extra);
+void print_action(std::tuple<int, int, int> action, std::string extra);
+void print_path(std::vector<std::tuple<int, int, int>> path);
+std::tuple<int, int> add(std::tuple<int, int> a, std::tuple<int, int> b);
+std::tuple<int, int> sub(std::tuple<int, int> a, std::tuple<int, int> b);
 
-void print_vector_2d(std::vector<std::vector<int>>& v) {
-	std::string s = "[";
-	for (std::vector<int>& row : v) {
-		s += "[";
-		for (int col_itr=0; col_itr < row.size(); ++col_itr) {
-			s += std::to_string(row[col_itr]);
-			if (col_itr != row.size() - 1) {
-				s += ", ";
-			}
-		}
-		s += "]\n";
-	}
-	s += "]";
-	std::cout << s << std::endl;
-}
-
-void print_vector_2d(std::vector<std::vector<int>>& v, int x0, int y0, int x1, int y1) {
-	std::string s = "[";
-	for (int y=y0; y < y1; ++y) {
-		s += "[";
-		for (int x=x0; x < x1; ++x) {
-			s += std::to_string(v[y][x]);
-			if (x != x1 - 1) {
-				s += ", ";
-			}
-		}
-		s += "]\n";
-	}
-	s += "]";
-	std::cout << s << std::endl;
-}
-
-void print_dir(std::tuple<int, int> dir, std::string extra) {
-	std::cout << "DIR: (" << std::get<0>(dir) << ", " << std::get<1>(dir) << ")\t" << extra << std::endl;
-}
-
-void print_pos(std::tuple<int, int> dir, std::string extra) {
-	std::cout << "POS: (" << std::get<0>(dir) << ", " << std::get<1>(dir) << ")\t" << extra << std::endl;
-}
-
-void print_action(std::tuple<int, int, int> action, std::string extra) {
-	std::cout << "ACTION: (" << std::get<0>(action) << ", " << std::get<1>(action) << ", " << std::get<2>(action) << ")\t" << extra << std::endl;
-}
-
-void print_path(std::vector<std::tuple<int, int, int>> path) {
-	for (std::tuple<int, int, int> action : path) {
-		print_action(action, "");
-	}
-}
-
-std::tuple<int, int> add(std::tuple<int, int> a, std::tuple<int, int> b) {
-	return std::tuple<int, int>(std::get<0>(a) + std::get<0>(b), std::get<1>(a) + std::get<1>(b));
-}
-
-std::tuple<int, int> sub(std::tuple<int, int> a, std::tuple<int, int> b) {
-	return std::tuple<int, int>(std::get<0>(a) - std::get<0>(b), std::get<1>(a) - std::get<1>(b));
-}
 
 //treats ZERO and EMPTY as different level states
 //for max performance, use EMPTY in place of ZERO in level (if 0s can be safely ignored)
 std::vector<std::tuple<int, int, int>> Pathfinder::pathfind(int search_type, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
-    switch(search_type) {
+    
+	//generate array of random numbers (for hashing)
+	std::vector<std::vector<int>> random;
+	random.reserve(level.size());
+	for (auto& row : level) {
+		std::vector<int> rand_row;
+		rand_row.reserve(row.size());
+		for (auto& id : row) {
+			rand_row.push_back(rand());
+		}
+		random.push_back(rand_row);
+	}
+	
+	switch(search_type) {
 		case SearchType::IDASTAR:
-			return pathfind_idastar(level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_idastar(random, level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 		case SearchType::ASTAR:
-			return pathfind_astar(level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_astar(random, level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 		case SearchType::STRAIGHT:
-			return pathfind_straight(level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_straight(random, level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 		case SearchType::MERGE_GREEDY:
-			return pathfind_merge_greedy(level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_merge_greedy(random, level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 		case SearchType::MERGE_LARGE_TO_SMALL:
-			return pathfind_merge_lts(level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_merge_lts(random, level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 		case SearchType::MERGE_SMALL_TO_LARGE:
-			return pathfind_merge_stl(level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_merge_stl(random, level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 		default:
-			return pathfind_idastar(level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_idastar(random, level, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
 	}
 }
 
-std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_idastar(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_idastar(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 
 	std::tuple<int, int> level_size(level[0].size(), level.size());
-	std::stack<LevelStateDFS*, std::vector<LevelStateDFS*>> stack; //all unfreed level states are here
+	std::stack<LevelStateDFS*, std::vector<LevelStateDFS*>> stack;
 	std::vector<std::tuple<int, int, int>> path;
 	std::unordered_map<std::pair<std::tuple<int, int>, std::vector<std::vector<int>>>, LevelStateDFS*, LevelStateHasher, LevelStateEquator> in_path;
 	int root_h = heuristic(start, end);
@@ -117,6 +82,7 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_idastar(const std::v
 	while (!stack.empty() || next_threshold != std::numeric_limits<int>::max()) {
 		if (stack.empty()) {
 			assert(path.size() == 0);
+			assert(in_path.size() == 0);
 
 			//add first level state
 			LevelStateDFS* first = new LevelStateDFS(level_size);
@@ -133,11 +99,12 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_idastar(const std::v
 			next_threshold = std::numeric_limits<int>::max();
 			std::cout << "PF NEW ITERATION, threshold = " << threshold << std::endl;
 		}
+		//remove from stack
 		LevelStateDFS* curr = stack.top();
 		stack.pop();
 		//print_pos(curr->pos, "EXPANDED, threshold = "+std::to_string(threshold));
 
-		//update path
+		//add to path
 		if (curr->g) {
 			path.push_back(curr->prev_action);
 		}
@@ -150,74 +117,75 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_idastar(const std::v
 				delete stack.top();
 				stack.pop();
 			}
+			for (auto& entry : in_path) {
+				delete entry.second;
+			}
 			return path;
 		}
 
 		//check depth
-		if (curr->g >= max_depth) {
-			continue;
-		}
+		if (curr->g < max_depth) {
+			//find neighbors
+			int curr_val = curr->level[std::get<1>(curr->pos)][std::get<0>(curr->pos)] % StuffId::MEMBRANE; //tile value
+			bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::ZERO && curr_val != StuffId::POW_OFFSET);
+			std::vector<LevelStateDFS*> neighbors;
 
-		//find neighbors
-		int curr_val = curr->level[std::get<1>(curr->pos)][std::get<0>(curr->pos)] % StuffId::MEMBRANE; //tile value
-		bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::ZERO && curr_val != StuffId::POW_OFFSET);
-		std::vector<LevelStateDFS*> neighbors;
-
-		for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
-			if (action_type == ActionType::SPLIT && !can_split) {
-				continue;
-			}
-
-			//dir is (x, y), action is (x, y, *)
-			for (std::tuple<int, int> dir : {std::tuple<int, int>(1, 0), std::tuple<int, int>(0, -1), std::tuple<int, int>(-1, 0), std::tuple<int, int>(0, 1)}) {
-				std::tuple<int, int, int> action = std::tuple<int, int, int>(std::get<0>(dir), std::get<1>(dir), action_type);
-				std::vector<std::vector<int>> temp_level = try_action(curr->level, curr->pos, action, tile_push_limit, is_player, tile_pow_max);
-				//UtilityFunctions::print("PF TEMP LEVEL SIZE: ", (int)temp_level.size());
-
-				if (temp_level.empty()) { //action not possible
+			for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
+				if (action_type == ActionType::SPLIT && !can_split) {
 					continue;
 				}
-				std::pair<std::tuple<int, int>, std::vector<std::vector<int>>> key(add(curr->pos, dir), temp_level);
 
-				if (!in_path.count(key)) { //create new level state
-					LevelStateDFS* temp = new LevelStateDFS(level_size);
-					temp->pos = add(curr->pos, dir);
-					temp->prev = curr;
-					temp->prev_action = action;
-					temp->g = curr->g + 1;
-					temp->h = heuristic(temp->pos, end);
-					temp->f = temp->g + temp->h;
-					temp->level = temp_level;
+				//dir is (x, y), action is (x, y, *)
+				for (std::tuple<int, int> dir : {std::tuple<int, int>(1, 0), std::tuple<int, int>(0, -1), std::tuple<int, int>(-1, 0), std::tuple<int, int>(0, 1)}) {
+					std::tuple<int, int, int> action = std::tuple<int, int, int>(std::get<0>(dir), std::get<1>(dir), action_type);
+					std::vector<std::vector<int>> temp_level = try_action(curr->level, curr->pos, action, tile_push_limit, is_player, tile_pow_max);
+					//UtilityFunctions::print("PF TEMP LEVEL SIZE: ", (int)temp_level.size());
 
-					//add level state
-					if (temp->f <= threshold) {
-						//stack.push(temp);
-						neighbors.push_back(temp);
+					if (temp_level.empty()) { //action not possible
+						continue;
 					}
-					else if (temp->f < next_threshold) { //update next threshold
-						next_threshold = temp->f;
-						//print_pos(temp->pos, "update next threshold to "+std::to_string(next_threshold));
+					std::pair<std::tuple<int, int>, std::vector<std::vector<int>>> key(add(curr->pos, dir), temp_level);
+
+					if (!in_path.count(key)) { //create new level state
+						LevelStateDFS* temp = new LevelStateDFS(level_size);
+						temp->pos = add(curr->pos, dir);
+						temp->prev = curr;
+						temp->prev_action = action;
+						temp->g = curr->g + 1;
+						temp->h = heuristic(temp->pos, end);
+						temp->f = temp->g + temp->h;
+						temp->level = temp_level;
+
+						//add level state
+						if (temp->f <= threshold) {
+							//stack.push(temp);
+							neighbors.push_back(temp);
+						}
+						else if (temp->f < next_threshold) { //update next threshold
+							next_threshold = temp->f;
+							//print_pos(temp->pos, "update next threshold to "+std::to_string(next_threshold));
+						}
 					}
 				}
-			}
-		} //end find neighbors
+			} //end find neighbors
 
-		//add neighbors (in order)
-		std::sort(neighbors.begin(), neighbors.end(), [](LevelStateDFS* first, LevelStateDFS* second) {
-			if (first->f < second->f) {
-				return true;
+			//add neighbors (in order)
+			std::sort(neighbors.begin(), neighbors.end(), [](LevelStateDFS* first, LevelStateDFS* second) {
+				if (first->f < second->f) {
+					return true;
+				}
+				if (first->f > second->f) {
+					return false;
+				}
+				return first->g > second->g;
+			});
+			for (LevelStateDFS* temp : neighbors) {
+				stack.push(temp);
+				++curr->child_count;
 			}
-			if (first->f > second->f) {
-				return false;
-			}
-			return first->g > second->g;
-		});
-		for (LevelStateDFS* temp : neighbors) {
-			stack.push(temp);
-			++curr->child_count;
 		}
 
-		while (curr != NULL && curr->child_count == 0) { //delete curr and its childless parents
+		while (curr != NULL && curr->child_count == 0) { //backtrack (delete childless level states)
 			//get parent pointer
 			LevelStateDFS* parent = curr->prev;
 
@@ -242,11 +210,11 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_idastar(const std::v
 	return std::vector<std::tuple<int, int, int>>();
 }
 
-std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_astar(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_astar(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 	
 	std::tuple<int, int> level_size(level[0].size(), level.size());
 	std::priority_queue<LevelStateBFS*, std::vector<LevelStateBFS*>, LevelStateComparer> wavefront;
-	std::unordered_map<std::pair<std::tuple<int, int>, std::vector<std::vector<int>>>, LevelStateBFS*, LevelStateHasher, LevelStateEquator> states_map;
+	std::unordered_map<std::pair<std::tuple<int, int>, std::vector<std::vector<int>>>, LevelStateBFS*, LevelStateHasher, LevelStateEquator> visited;
 	
 	//add first level state
 	LevelStateBFS* first = new LevelStateBFS(level_size);
@@ -255,7 +223,7 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_astar(const std::vec
 	first->h = heuristic(start, end);
 	first->f = first->g + first->h;
 	first->level = level;
-	states_map[std::make_pair(first->pos, first->level)] = first;
+	visited[std::make_pair(start, level)] = first;
 	wavefront.push(first);
 
 	//expand until end reaches top of queue
@@ -263,14 +231,13 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_astar(const std::vec
 		//get top
 		LevelStateBFS* curr = wavefront.top();
 		wavefront.pop();
-
 		print_pos(curr->pos, "EXPANDED, f = "+std::to_string(curr->f));
 
 		//check if end
 		if (curr->pos == end) {
 			std::cout << "PF FOUND PATH" << std::endl;
 			std::vector<std::tuple<int, int, int>> ans = curr->trace_path();
-			for (auto entry : states_map) {
+			for (auto& entry : visited) {
 				delete entry.second;
 			}
 			return ans;
@@ -301,8 +268,8 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_astar(const std::vec
 				}
 				std::pair<std::tuple<int, int>, std::vector<std::vector<int>>> key(add(curr->pos, dir), temp_level);
 
-				if (states_map.count(key)) { //level state exists
-					LevelStateBFS* temp = states_map.at(key);
+				if (visited.count(key)) { //level state exists
+					LevelStateBFS* temp = visited.at(key);
 
 					//if path better, update heuristic and prev
 					if (curr->g + 1 < temp->g) {
@@ -324,7 +291,7 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_astar(const std::vec
 					temp->h = heuristic(temp->pos, end);
 					temp->f = temp->g + temp->h;
 					temp->level = temp_level;
-					states_map[key] = temp;
+					visited[key] = temp;
 					wavefront.push(temp);
 				}
 			}
@@ -332,25 +299,25 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_astar(const std::vec
 	} //end search
 
 	std::cout << "NO PATH FOUND" << std::endl;
-	for (auto entry : states_map) {
+	for (auto& entry : visited) {
 		delete entry.second;
 	}
 	return std::vector<std::tuple<int, int, int>>(); //no path found
 }
 
-std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_straight(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_straight(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 	return std::vector<std::tuple<int, int, int>>();
 }
 
-std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_merge_greedy(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_merge_greedy(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 	return std::vector<std::tuple<int, int, int>>();
 }
 
-std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_merge_lts(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_merge_lts(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 	return std::vector<std::tuple<int, int, int>>();
 }
 
-std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_merge_stl(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_merge_stl(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
 	return std::vector<std::tuple<int, int, int>>();
 }
 
@@ -517,9 +484,17 @@ int Pathfinder::heuristic(std::tuple<int, int> pos, std::tuple<int, int> goal) {
 	return abs(std::get<0>(pos) - std::get<0>(goal)) + abs(std::get<1>(pos) - std::get<1>(goal));
 }
 
+int z_hash(const std::tuple<int, int>& pos, const std::vector<std::vector<int>>& level) {
+	int hash = 0;
+	hash ^= std::hash<int>{}(std::get<0>(pos)) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+	hash ^= std::hash<int>{}(std::get<1>(pos)) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+
+	return hash;
+}
+
 LevelState::LevelState(std::tuple<int, int> level_size) {
 	level.resize(std::get<1>(level_size));
-	for (auto row : level) {
+	for (auto& row : level) {
 		row.reserve(std::get<0>(level_size));
 	}
 }
@@ -529,8 +504,8 @@ std::vector<std::tuple<int, int, int>> LevelStateBFS::trace_path() {
 	std::vector<std::vector<std::vector<int>>> levels_debug;
 	ans.resize(this->g);
 	levels_debug.resize(this->g);
-	LevelStateBFS* curr = this;
 	int index = this->g - 1;
+	LevelStateBFS* curr = this;
 
 	while (curr->prev != NULL) {
 		ans[index] = curr->prev_action;
@@ -543,6 +518,68 @@ std::vector<std::tuple<int, int, int>> LevelStateBFS::trace_path() {
 		//print_vector_2d(levels_debug[i],0,0,5,5);
 	}
 	return ans;
+}
+
+
+
+
+
+void print_vector_2d(std::vector<std::vector<int>>& v) {
+	std::string s = "[";
+	for (std::vector<int>& row : v) {
+		s += "[";
+		for (int col_itr=0; col_itr < row.size(); ++col_itr) {
+			s += std::to_string(row[col_itr]);
+			if (col_itr != row.size() - 1) {
+				s += ", ";
+			}
+		}
+		s += "]\n";
+	}
+	s += "]";
+	std::cout << s << std::endl;
+}
+
+void print_vector_2d(std::vector<std::vector<int>>& v, int x0, int y0, int x1, int y1) {
+	std::string s = "[";
+	for (int y=y0; y < y1; ++y) {
+		s += "[";
+		for (int x=x0; x < x1; ++x) {
+			s += std::to_string(v[y][x]);
+			if (x != x1 - 1) {
+				s += ", ";
+			}
+		}
+		s += "]\n";
+	}
+	s += "]";
+	std::cout << s << std::endl;
+}
+
+void print_dir(std::tuple<int, int> dir, std::string extra) {
+	std::cout << "DIR: (" << std::get<0>(dir) << ", " << std::get<1>(dir) << ")\t" << extra << std::endl;
+}
+
+void print_pos(std::tuple<int, int> dir, std::string extra) {
+	std::cout << "POS: (" << std::get<0>(dir) << ", " << std::get<1>(dir) << ")\t" << extra << std::endl;
+}
+
+void print_action(std::tuple<int, int, int> action, std::string extra) {
+	std::cout << "ACTION: (" << std::get<0>(action) << ", " << std::get<1>(action) << ", " << std::get<2>(action) << ")\t" << extra << std::endl;
+}
+
+void print_path(std::vector<std::tuple<int, int, int>> path) {
+	for (std::tuple<int, int, int> action : path) {
+		print_action(action, "");
+	}
+}
+
+std::tuple<int, int> add(std::tuple<int, int> a, std::tuple<int, int> b) {
+	return std::tuple<int, int>(std::get<0>(a) + std::get<0>(b), std::get<1>(a) + std::get<1>(b));
+}
+
+std::tuple<int, int> sub(std::tuple<int, int> a, std::tuple<int, int> b) {
+	return std::tuple<int, int>(std::get<0>(a) - std::get<0>(b), std::get<1>(a) - std::get<1>(b));
 }
 
 //for debugging

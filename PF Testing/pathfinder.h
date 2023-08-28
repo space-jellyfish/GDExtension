@@ -2,18 +2,6 @@
 #define PATHFINDER
 
 #include <vector>
-#include <deque>
-#include <string>
-#include <memory>
-
-void print_vector_2d(std::vector<std::vector<int>>& v);
-void print_vector_2d(std::vector<std::vector<int>>& v, int x0, int y0, int x1, int y1);
-void print_dir(std::tuple<int, int> dir, std::string extra);
-void print_pos(std::tuple<int, int> dir, std::string extra);
-void print_action(std::tuple<int, int, int> action, std::string extra);
-void print_path(std::vector<std::tuple<int, int, int>> path);
-std::tuple<int, int> add(std::tuple<int, int> a, std::tuple<int, int> b);
-std::tuple<int, int> sub(std::tuple<int, int> a, std::tuple<int, int> b);
 
 
 enum StuffId {
@@ -32,6 +20,7 @@ enum StuffId {
 enum ActionType {
 	SLIDE = 0,
 	SPLIT,
+	SHIFT,
 	END
 };
 
@@ -48,16 +37,17 @@ class Pathfinder {
 	
 public:
     std::vector<std::tuple<int, int, int>> pathfind(int search_type, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	std::vector<std::tuple<int, int, int>> pathfind_idastar(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	std::vector<std::tuple<int, int, int>> pathfind_astar(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	std::vector<std::tuple<int, int, int>> pathfind_straight(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	std::vector<std::tuple<int, int, int>> pathfind_merge_greedy(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	std::vector<std::tuple<int, int, int>> pathfind_merge_lts(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	std::vector<std::tuple<int, int, int>> pathfind_merge_stl(const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	std::vector<std::tuple<int, int, int>> pathfind_idastar(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	std::vector<std::tuple<int, int, int>> pathfind_astar(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	std::vector<std::tuple<int, int, int>> pathfind_straight(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	std::vector<std::tuple<int, int, int>> pathfind_merge_greedy(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	std::vector<std::tuple<int, int, int>> pathfind_merge_lts(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
+	std::vector<std::tuple<int, int, int>> pathfind_merge_stl(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
 	std::vector<std::vector<int>> try_action(std::vector<std::vector<int>> level, std::tuple<int, int> pos, std::tuple<int, int, int> action, int tile_push_limit, bool is_player, int tile_pow_max);
 	std::vector<std::vector<int>> try_slide(std::vector<std::vector<int>>& level, std::tuple<int, int> pos, std::tuple<int, int> dir, int tile_push_limit, bool is_player, int tile_pow_max);
 	std::vector<std::vector<int>> try_split(std::vector<std::vector<int>>& level, std::tuple<int, int> pos, std::tuple<int, int> dir, int tile_push_limit, bool is_player, int tile_pow_max);
 	int heuristic(std::tuple<int, int> pos, std::tuple<int, int> goal);
+	int z_hash(const std::tuple<int, int>& pos, const std::vector<std::vector<int>>& level);
 };
 
 struct LevelState {
@@ -88,7 +78,7 @@ struct LevelStateDFS : LevelState {
 	using LevelState::LevelState;
 };
 
-//use f heuristic for sorting priority queue
+//if f tied, use g; higher g indicates higher confidence
 struct LevelStateComparer {
 	bool operator() (LevelState* first, LevelState* second) {
 		if (first->f > second->f) {
