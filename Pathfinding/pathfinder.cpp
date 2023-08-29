@@ -314,6 +314,7 @@ Array Pathfinder::pathfind_merge_stl(std::vector<std::vector<int>>& level, Vecto
 //assume dir is (y, x)
 //assume level nonempty
 //assume cell at pos is a tile
+//assume tile_pow_max <= 14
 //returns updated level if action possible, else empty vector
 std::vector<std::vector<int>> Pathfinder::try_action(std::vector<std::vector<int>> level, Vector2i pos, Vector3i action, int tile_push_limit, bool is_player, int tile_pow_max) {
 	Vector2i dir = Vector2i(action.x, action.y);
