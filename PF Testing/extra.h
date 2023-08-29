@@ -36,3 +36,35 @@
 	std::cout << test[0]->f << std::endl;
 	std::cout << test[1]->f << std::endl;
 */
+
+/*
+	int index = 0;
+	for (std::tuple<int, int, int> action : {
+		std::tuple<int, int, int>(0,1,0),
+		std::tuple<int, int, int>(1,0,0),
+		std::tuple<int, int, int>(0,1,0),
+		std::tuple<int, int, int>(1,0,0),
+		std::tuple<int, int, int>(0,1,1),
+		std::tuple<int, int, int>(0,1,0),
+		std::tuple<int, int, int>(0,1,0),
+		std::tuple<int, int, int>(0,-1,0),
+		std::tuple<int, int, int>(0,-1,0),
+		std::tuple<int, int, int>(1,0,0),
+	}) {
+		level = p.try_action(level, start, action, 1, true, 12);
+		print_vector_2d(level);
+		std::tuple<int, int> dir {std::get<0>(action), std::get<1>(action)};
+		start = add(start, dir);
+		if (level.size() == 0) {
+			std::cout << "MOVE " << index << " IS PROBLEMATIC" << std::endl;
+			break;
+		}
+		++index;
+	}
+*/
+
+/*
+		std::string indentation(2*curr->g, ' ');
+		std::string line = indentation + "POS: (" + std::to_string(std::get<0>(curr->pos)) + ", " + std::to_string(std::get<1>(curr->pos)) + ") EXPANDED, f = " + std::to_string(curr->f) + "\n";
+		output << line;
+*/

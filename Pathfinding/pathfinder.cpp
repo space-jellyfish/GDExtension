@@ -120,7 +120,7 @@ Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2
 		if (curr->g < max_depth) {
 			//find neighbors
 			int curr_val = curr->level[curr->pos.y][curr->pos.x] % StuffId::MEMBRANE; //tile value
-			bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::ZERO && curr_val != StuffId::POW_OFFSET);
+			bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::POS_ONE && curr_val != StuffId::ZERO);
 			std::vector<LevelStateDFS*> neighbors;
 
 			for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
@@ -161,13 +161,13 @@ Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2
 
 			//add neighbors (in order)
 			std::sort(neighbors.begin(), neighbors.end(), [](LevelStateDFS* first, LevelStateDFS* second) {
-				if (first->f < second->f) {
+				if (first->f > second->f) {
 					return true;
 				}
-				if (first->f > second->f) {
+				if (first->f < second->f) {
 					return false;
 				}
-				return first->g > second->g;
+				return first->g < second->g;
 			});
 			for (LevelStateDFS* temp : neighbors) {
 				stack.push(temp);
@@ -240,7 +240,7 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 
 		//add/update neighbors
 		int curr_val = curr->level[curr->pos.y][curr->pos.x] % StuffId::MEMBRANE; //tile value
-		bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::ZERO && curr_val != StuffId::POW_OFFSET);
+		bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::POS_ONE && curr_val != StuffId::ZERO);
 
 		for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
 			if (action_type == ActionType::SPLIT && !can_split) {
@@ -370,11 +370,12 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 		}
 
 		next_tile_val = next_val % StuffId::MEMBRANE;
-		int curr_tile_pow = abs(curr_tile_val - StuffId::POW_OFFSET);
-		int next_tile_pow = abs(next_tile_val - StuffId::POW_OFFSET);
-		if (next_tile_val == StuffId::ZERO || (curr_tile_pow == next_tile_pow && curr_tile_pow < tile_pow_max) || curr_tile_val == StuffId::ZERO) { //merge
+		int curr_tile_pow = abs(curr_tile_val - StuffId::ZERO);
+		int next_tile_pow = abs(next_tile_val - StuffId::ZERO);
+		bool mergeable_pows = (curr_tile_pow == next_tile_pow && curr_tile_pow != tile_pow_max);
+		if (next_tile_val == StuffId::ZERO || (next_tile_val != StuffId::EMPTY && (mergeable_pows || curr_tile_val == StuffId::ZERO))) { //merge
 			//push 0?
-			if (tile_push_count != tile_push_limit && next_tile_val == StuffId::ZERO) {
+			if (tile_push_count != tile_push_limit && next_tile_val == StuffId::ZERO) { //can push if unobstructed
 				Vector2i temp_pos = next_pos + dir;
 				if (within_bounds(temp_pos)) {
 					int temp_val = level[temp_pos.y][temp_pos.x];
@@ -389,12 +390,21 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 			else if (next_tile_val == StuffId::ZERO) {
 				level[next_pos.y][next_pos.x] += curr_tile_val - next_tile_val;
 			}
+			else if (curr_tile_val == StuffId::POS_ONE || curr_tile_val == StuffId::NEG_ONE) { //ones
+				if (curr_tile_val + next_tile_val == StuffId::MEMBRANE) { //opposite sign
+					level[next_pos.y][next_pos.x] += StuffId::ZERO - next_tile_val;
+				}
+				else { //same sign
+					int dval = (curr_tile_val > StuffId::ZERO) ? -14 : 14;
+					level[next_pos.y][next_pos.x] += dval;
+				}
+			}
 			else {
 				if (curr_tile_pow + next_tile_pow == StuffId::MEMBRANE) { //opposite sign
 					level[next_pos.y][next_pos.x] += StuffId::ZERO - next_tile_val;
 				}
 				else { //same sign
-					int pow_sign = (curr_tile_val > StuffId::POW_OFFSET) ? 1 : -1;
+					int pow_sign = (curr_tile_val > StuffId::ZERO) ? 1 : -1;
 					level[next_pos.y][next_pos.x] += pow_sign;
 				}
 			}
@@ -446,9 +456,12 @@ std::vector<std::vector<int>> Pathfinder::try_split(std::vector<std::vector<int>
 		return std::vector<std::vector<int>>();
 	}
 
-	int target_val = level[target.y][target.x];
 	int tile_val = level[pos.y][pos.x] % StuffId::MEMBRANE; //don't care about back layer at pos
-	int pow_sign = (tile_val > StuffId::POW_OFFSET) ? 1 : -1;
+	int pow_sign = (tile_val > StuffId::ZERO) ? 1 : -1;
+	int tile_pow = abs(tile_val - StuffId::ZERO);
+	if (tile_pow == 1) {
+		pow_sign *= -14;
+	}
 
 	//use try_slide() to handle push logic, then set splitted tile
 	level[pos.y][pos.x] -= pow_sign;

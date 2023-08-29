@@ -13,11 +13,12 @@ two +-2^12 tiles cannot merge
 #include <unordered_map>
 #include <stack>
 #include <cstdlib>
+//#include <fstream>
 
 void print_vector_2d(std::vector<std::vector<int>>& v);
 void print_vector_2d(std::vector<std::vector<int>>& v, int x0, int y0, int x1, int y1);
 void print_dir(std::tuple<int, int> dir, std::string extra);
-void print_pos(std::tuple<int, int> dir, std::string extra);
+void print_pos(std::string pad, std::tuple<int, int> dir, std::string extra);
 void print_action(std::tuple<int, int, int> action, std::string extra);
 void print_path(std::vector<std::tuple<int, int, int>> path);
 std::tuple<int, int> add(std::tuple<int, int> a, std::tuple<int, int> b);
@@ -127,7 +128,7 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_idastar(const std::v
 		if (curr->g < max_depth) {
 			//find neighbors
 			int curr_val = curr->level[std::get<1>(curr->pos)][std::get<0>(curr->pos)] % StuffId::MEMBRANE; //tile value
-			bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::ZERO && curr_val != StuffId::POW_OFFSET);
+			bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::POS_ONE && curr_val != StuffId::ZERO);
 			std::vector<LevelStateDFS*> neighbors;
 
 			for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
@@ -171,13 +172,13 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_idastar(const std::v
 
 			//add neighbors (in order)
 			std::sort(neighbors.begin(), neighbors.end(), [](LevelStateDFS* first, LevelStateDFS* second) {
-				if (first->f < second->f) {
+				if (first->f > second->f) {
 					return true;
 				}
-				if (first->f > second->f) {
+				if (first->f < second->f) {
 					return false;
 				}
-				return first->g > second->g;
+				return first->g < second->g;
 			});
 			for (LevelStateDFS* temp : neighbors) {
 				stack.push(temp);
@@ -211,7 +212,7 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_idastar(const std::v
 }
 
 std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_astar(const std::vector<std::vector<int>>& random, const std::vector<std::vector<int>>& level, std::tuple<int, int> start, std::tuple<int, int> end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
-	
+
 	std::tuple<int, int> level_size(level[0].size(), level.size());
 	std::priority_queue<LevelStateBFS*, std::vector<LevelStateBFS*>, LevelStateComparer> wavefront;
 	std::unordered_map<std::pair<std::tuple<int, int>, std::vector<std::vector<int>>>, LevelStateBFS*, LevelStateHasher, LevelStateEquator> visited;
@@ -231,7 +232,7 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_astar(const std::vec
 		//get top
 		LevelStateBFS* curr = wavefront.top();
 		wavefront.pop();
-		print_pos(curr->pos, "EXPANDED, f = "+std::to_string(curr->f));
+		//print_pos(indentation, curr->pos, "EXPANDED, f = "+std::to_string(curr->f));
 
 		//check if end
 		if (curr->pos == end) {
@@ -250,7 +251,7 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_astar(const std::vec
 
 		//add/update neighbors
 		int curr_val = curr->level[std::get<1>(curr->pos)][std::get<0>(curr->pos)] % StuffId::MEMBRANE; //tile value
-		bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::ZERO && curr_val != StuffId::POW_OFFSET);
+		bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::POS_ONE && curr_val != StuffId::ZERO);
 
 		for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
 			if (action_type == ActionType::SPLIT && !can_split) {
@@ -324,6 +325,7 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_merge_stl(const std:
 //assume dir is (y, x)
 //assume level nonempty
 //assume cell at pos is a tile
+//assume tile_pow_max <= 14
 //returns updated level if action possible, else empty vector
 std::vector<std::vector<int>> Pathfinder::try_action(std::vector<std::vector<int>> level, std::tuple<int, int> pos, std::tuple<int, int, int> action, int tile_push_limit, bool is_player, int tile_pow_max) {
 	std::tuple<int, int> dir = std::tuple<int, int>(std::get<0>(action), std::get<1>(action));
@@ -383,11 +385,12 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 		}
 
 		next_tile_val = next_val % StuffId::MEMBRANE;
-		int curr_tile_pow = abs(curr_tile_val - StuffId::POW_OFFSET);
-		int next_tile_pow = abs(next_tile_val - StuffId::POW_OFFSET);
-		if (next_tile_val == StuffId::ZERO || (curr_tile_pow == next_tile_pow && curr_tile_pow < tile_pow_max) || curr_tile_val == StuffId::ZERO) { //merge
+		int curr_tile_pow = abs(curr_tile_val - StuffId::ZERO);
+		int next_tile_pow = abs(next_tile_val - StuffId::ZERO);
+		bool mergeable_pows = (curr_tile_pow == next_tile_pow && curr_tile_pow != tile_pow_max);
+		if (next_tile_val == StuffId::ZERO || (next_tile_val != EMPTY && (mergeable_pows || curr_tile_val == StuffId::ZERO))) { //merge
 			//push 0?
-			if (tile_push_count != tile_push_limit && next_tile_val == StuffId::ZERO) {
+			if (tile_push_count != tile_push_limit && next_tile_val == StuffId::ZERO) { //can push if unobstructed
 				std::tuple<int, int> temp_pos = add(next_pos, dir);
 				if (within_bounds(temp_pos)) {
 					int temp_val = level[std::get<1>(temp_pos)][std::get<0>(temp_pos)];
@@ -402,12 +405,21 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 			else if (next_tile_val == StuffId::ZERO) {
 				level[std::get<1>(next_pos)][std::get<0>(next_pos)] += curr_tile_val - next_tile_val;
 			}
+			else if (curr_tile_val == StuffId::POS_ONE || curr_tile_val == StuffId::NEG_ONE) { //ones
+				if (curr_tile_val + next_tile_val == StuffId::MEMBRANE) { //opposite sign
+					level[std::get<1>(next_pos)][std::get<0>(next_pos)] += StuffId::ZERO - next_tile_val;
+				}
+				else { //same sign
+					int dval = (curr_tile_val > StuffId::ZERO) ? -14 : 14;
+					level[std::get<1>(next_pos)][std::get<0>(next_pos)] += dval;
+				}
+			}
 			else {
 				if (curr_tile_pow + next_tile_pow == StuffId::MEMBRANE) { //opposite sign
 					level[std::get<1>(next_pos)][std::get<0>(next_pos)] += StuffId::ZERO - next_tile_val;
 				}
 				else { //same sign
-					int pow_sign = (curr_tile_val > StuffId::POW_OFFSET) ? 1 : -1;
+					int pow_sign = (curr_tile_val > StuffId::ZERO) ? 1 : -1;
 					level[std::get<1>(next_pos)][std::get<0>(next_pos)] += pow_sign;
 				}
 			}
@@ -463,9 +475,12 @@ std::vector<std::vector<int>> Pathfinder::try_split(std::vector<std::vector<int>
 		return std::vector<std::vector<int>>();
 	}
 
-	int target_val = level[std::get<1>(target)][std::get<0>(target)];
 	int tile_val = level[std::get<1>(pos)][std::get<0>(pos)] % StuffId::MEMBRANE; //don't care about back layer at pos
-	int pow_sign = (tile_val > StuffId::POW_OFFSET) ? 1 : -1;
+	int pow_sign = (tile_val > StuffId::ZERO) ? 1 : -1;
+	int tile_pow = abs(tile_val - StuffId::ZERO);
+	if (tile_pow == 1) {
+		pow_sign *= -14;
+	}
 
 	//use try_slide() to handle push logic, then set splitted tile
 	level[std::get<1>(pos)][std::get<0>(pos)] -= pow_sign;
@@ -560,8 +575,8 @@ void print_dir(std::tuple<int, int> dir, std::string extra) {
 	std::cout << "DIR: (" << std::get<0>(dir) << ", " << std::get<1>(dir) << ")\t" << extra << std::endl;
 }
 
-void print_pos(std::tuple<int, int> dir, std::string extra) {
-	std::cout << "POS: (" << std::get<0>(dir) << ", " << std::get<1>(dir) << ")\t" << extra << std::endl;
+void print_pos(std::string pad, std::tuple<int, int> dir, std::string extra) {
+	std::cout << pad << "POS: (" << std::get<0>(dir) << ", " << std::get<1>(dir) << ")\t" << extra << std::endl;
 }
 
 void print_action(std::tuple<int, int, int> action, std::string extra) {
@@ -584,11 +599,11 @@ std::tuple<int, int> sub(std::tuple<int, int> a, std::tuple<int, int> b) {
 
 //for debugging
 int main(void) {
-	//std::vector<std::vector<int>> level = {{16,16,18,21,23}, {31, 0, 18, 21, 23}, {0, 0, 17, 20, 22}, {16, 16, 16, 19, 21}, {-1, 17, 17, 19, 21}};
-	std::vector<std::vector<int>> level = {{16, 16, 18, 21, 23, 23, 21, 20, 18, 18, 18, 17, 0, 15, 13, 14, 31, 0, 0, 0, 17, 17, 16, 17, 0, 31, 14, 13, -1, 0, 16, 16, 18, 20, 21, 19, 18, 16, 0, 15}, {31, 0, 18, 21, 23, 23, 21, 20, 18, 18, 18, 17, 0, 31, 13, 13, 31, 0, 0, 16, 18, 19, 18, 18, 17, 15, 13, 12, 32, 0, 0, 0, 17, 19, 22, 21, 18, 17, 0, 15}, {0, 0, 17, 20, 22, 22, 21, 19, 18, 19, 18, 16, 0, 15, 13, 12, 15, 0, 0, 17, 18, 18, 18, 19, 18, 0, 13, 11, 12, 15, 0, 0, 16, 17, 21, 21, 19, 18, 16, 0}, {16, 16, 16, 19, 21, 22, 21, 20, 18, 17, 16, 0, 0, 15, 14, 13, 13, 15, 0, 17, 17, 17, 18, 19, 18, 0, 15, 13, 32, 14, 31, 0, 0, 17, 21, 21, 20, 19, 19, 19}, {-1, 17, 17, 19, 21, 22, 22, 21, 19, 16, 0, 0, 0, 31, 13, 12, 12, 14, 0, 0, 16, 16, 17, 18, 18, 0, 15, 14, -1, 14, 14, 14, 31, 18, 21, 22, 21, 21, 21, 21}, {19, 19, 18, 19, 21, 22, 22, 22, 20, 16, 0, 0, 0, 31, 12, 10, 11, 13, 31, 0, 0, 16, 18, 20, 19, 16, 0, 31, 15, 15, 14, 14, 31, 17, 20, 20, 19, 20, 20, 20}, {19, 19, 18, 18, 19, 20, 21, 21, 20, 17, 0, 0, 0, 15, 12, 10, 12, 14, 31, 31, 0, 0, 18, 20, 20, 18, 16, 0, 31, 31, 31, 15, 0, 17, 18, 16, 0, 17, 18, 19}, {16, 18, 19, 19, 20, 20, 19, 19, 18, 16, 0, 0, 0, 15, 11, 9, 10, 13, 15, 0, 0, 0, 17, 19, 20, 18, 18, 17, 0, 0, 31, 15, 0, 16, 0, 31, 15, 0, 16, 20}, {16, 18, 19, 21, 22, 21, 18, 17, 16, 31, 15, 15, 14, 14, 11, 8, 8, 10, 12, 31, 31, 31, 0, 17, 19, 19, 20, 21, 19, 17, 16, 0, 0, 0, 15, 13, 15, 31, 16, 19}, {0, 17, 18, 19, 21, 20, 16, 0, 31, 14, 13, 12, 13, 13, 11, 8, 8, 10, 11, 14, 31, 31, 31, 0, 18, 20, 20, 32, 22, 20, 19, 18, 16, 0, 15, 13, 15, 0, 16, 18}, {0, 17, 18, 19, 19, 18, 0, 14, 13, 13, 13, 12, 12, 12, 11, 10, 10, 11, 12, 14, 31, 15, 14, 0, 17, 32, -1, 32, 22, 20, 19, 18, 17, 16, 31, 14, 15, 0, 16, 16}, {17, 17, 18, 18, 18, 17, 0, 14, 12, 12, 13, 12, 12, 12, 11, 11, 11, 11, 12, 13, 31, 15, 15, 0, 32, 32, 19, 20, 20, 18, 18, 18, 16, 0, 31, 13, 13, 14, 31, 31}, {20, 19, 17, 17, 16, 16, 0, 15, 14, 12, 11, 11, 12, 13, 12, 12, 12, 12, 12, 13, 15, 15, 15, 15, -1, 16, 19, 19, 17, 17, 18, 17, 0, 0, 15, 12, 11, 12, 13, 14}, {22, 21, 20, 17, 16, 0, 31, 15, 15, 14, 12, 12, 13, 14, 14, 13, 13, 13, 13, 14, 31, 31, 14, 13, -1, 0, 16, 17, 0, 0, 16, 0, 0, 15, 13, 12, 13, 13, 14, 14}, {21, 20, 19, 17, 16, 17, 16, 16, 16, 0, 15, 13, 14, 14, 14, 14, 12, 12, 13, 15, 0, 0, 15, 13, 14, 32, 31, 0, 31, 15, 15, 31, 31, 13, 12, 12, 14, 15, 31, 31}, {20, 18, 16, 0, 17, 18, 18, 19, 17, 17, 16, 0, 0, 31, 14, 13, 14, 13, 13, 15, 0, 31, 14, 12, 13, 32, 14, 15, 14, 13, 13, 15, 15, 12, 11, 11, 13, 15, 31, 31}, {18, 16, 0, 0, 16, 17, 17, 18, 19, 20, 20, 19, 19, 16, 15, 15, 31, 0, 31, 0, 0, 31, 13, 11, -1, 14, 15, 14, 13, 13, 14, 15, 14, 13, 12, 12, 11, 12, 13, 15}, {0, 0, 15, 15, 31, 16, 17, 17, 20, 21, 21, 21, 21, 19, 16, 0, 0, 16, 17, 16, 16, 0, -1, 13, 14, 15, 31, 31, 14, 14, 15, 15, 14, 12, 13, 11, 9, 9, 10, 12}, {31, 14, 13, 12, 14, 31, 0, 16, 19, 20, 19, 20, 21, 20, 19, 17, 18, 19, 20, 18, 17, 0, 15, 14, 14, 15, 15, 14, 13, 14, 31, 31, 14, 13, 13, 11, 9, 9, 9, 10}, {14, 12, 12, 13, 14, 31, 0, 0, 17, 19, 18, 19, 19, 18, 19, 18, 20, 21, 20, 19, 18, 16, 0, 0, 31, 31, 15, 13, 13, 15, 0, 0, 15, 15, 14, 12, 11, 11, 11, 11}, {14, 11, 11, 15, 0, 0, 17, 16, 16, 18, 18, 17, 18, 19, 19, 19, 19, 20, 20, 20, 19, 18, 17, 0, 31, 31, 15, 13, 12, 13, 31, 0, 31, 15, 13, 12, 13, 14, 15, 14}, {14, 10, 11, 15, 0, 16, 17, 16, 0, 17, 16, 16, 18, 20, 19, 17, 16, -1, 20, 21, 20, 18, 17, 0, 0, 31, 15, 13, 12, 11, 14, 31, 15, 15, 14, 13, 15, 0, 0, 31}, {13, 11, 12, 15, 0, 0, 0, 16, 0, 0, 0, 17, 18, 18, 17, 0, 31, 0, 19, 21, 20, 18, 17, 17, 16, 31, 13, 12, 12, 13, 15, 31, 0, 0, 0, 31, 0, 17, 16, 0}, {31, 14, 15, 31, 0, 31, 15, 15, 31, 31, 0, 16, 16, 0, 0, 31, 15, 31, 17, 19, 21, 20, 19, 19, 17, 31, 12, 11, 11, 14, 31, 0, 16, 18, 18, 17, 18, 18, 18, 18}, {0, 0, 0, 0, 0, 31, 14, 13, 15, 31, 0, 0, 31, 14, 15, 15, 31, 0, 16, 18, 20, 20, 19, 19, 16, 31, 14, 12, 12, 14, 31, 0, 17, 19, 18, 18, 20, 20, 20, 21}, {0, 16, 16, 0, 0, 0, 31, 15, 31, 31, 31, 31, 15, 12, -1, 14, 31, 16, 18, 17, 18, 18, 18, 18, 16, 0, 15, 13, 13, 15, 0, 16, 19, 19, 19, 19, 21, 21, 20, 20}, {0, 16, 16, 0, 0, 0, 0, 0, 0, 15, 14, 14, 13, 12, -1, 13, 31, 0, 18, 17, 16, 17, 18, 18, 16, 0, 14, 13, 12, 13, 15, 16, 20, 22, 21, 20, 20, 20, 19, 18}, {0, 0, 16, 0, 0, 0, 17, 18, 16, 31, 15, 15, 15, 15, 32, 31, 0, 16, 17, 17, 0, 0, 16, 16, 0, 31, 13, 11, 11, 12, 14, 0, 19, 22, 22, 19, 19, 18, 17, 17}, {31, 0, 16, 0, 0, 18, 20, 21, 18, 0, 31, 0, 16, 16, 0, 16, 18, 18, 17, 16, 0, 0, 16, 0, 31, 15, 12, 11, 13, 13, 15, 16, 20, 23, 23, 21, 20, 19, 19, 19}, {0, 0, 0, 0, 17, 20, 22, 21, 18, 0, 31, 0, 18, 19, 18, 19, 21, 21, 19, 18, 17, 18, 18, 16, 31, 13, 13, 14, 15, 15, 0, 18, 21, 23, 23, 22, 22, 20, 20, 19}};
-	//std::vector<std::vector<int>> level = {{-1, 0}, {16, 31}};
-	//std::vector<std::vector<int>> level = {{-1, 0, 0}, {16, 17, 17}};
-	//std::vector<std::vector<int>> level = {{16, 17, 17}, {17, 17, 1}, {17, 17, 1}};
+	//std::vector<std::vector<int>> level = {{-1, 0}, {31, 1}};
+	//std::vector<std::vector<int>> level = {{-1, 0, 0}, {31, 17, 17}};
+	//std::vector<std::vector<int>> level = {{31, 17, 17}, {17, 17, 16}, {17, 17, 16}};
+	//std::vector<std::vector<int>> level = {{31,31,18,21}, {1,0,18,21}, {0,0,17,20}, {31,31,31,19}, {-1,17,17,19}, {19,19,18,19}};
+	std::vector<std::vector<int>> level = {{31, 31, 18, 21, 23, 23, 21, 20, 18, 18, 18, 17, 0, 15, 13, 14, 1, 0, 0, 0, 17, 17, 31, 17, 0, 1, 14, 13, -1, 0, 31, 31, 18, 20, 21, 19, 18, 31, 0, 15}, {1, 0, 18, 21, 23, 23, 21, 20, 18, 18, 18, 17, 0, 1, 13, 13, 1, 0, 0, 31, 18, 19, 18, 18, 17, 15, 13, 12, 32, 0, 0, 0, 17, 19, 22, 21, 18, 17, 0, 15}, {0, 0, 17, 20, 22, 22, 21, 19, 18, 19, 18, 31, 0, 15, 13, 12, 15, 0, 0, 17, 18, 18, 18, 19, 18, 0, 13, 11, 12, 15, 0, 0, 31, 17, 21, 21, 19, 18, 31, 0}, {31, 31, 31, 19, 21, 22, 21, 20, 18, 17, 31, 0, 0, 15, 14, 13, 13, 15, 0, 17, 17, 17, 18, 19, 18, 0, 15, 13, 32, 14, 1, 0, 0, 17, 21, 21, 20, 19, 19, 19}, {-1, 17, 17, 19, 21, 22, 22, 21, 19, 31, 0, 0, 0, 1, 13, 12, 12, 14, 0, 0, 31, 31, 17, 18, 18, 0, 15, 14, -1, 14, 14, 14, 1, 18, 21, 22, 21, 21, 21, 21}, {19, 19, 18, 19, 21, 22, 22, 22, 20, 31, 0, 0, 0, 1, 12, 10, 11, 13, 1, 0, 0, 31, 18, 20, 19, 31, 0, 1, 15, 15, 14, 14, 1, 17, 20, 20, 19, 20, 20, 20}, {19, 19, 18, 18, 19, 20, 21, 21, 20, 17, 0, 0, 0, 15, 12, 10, 12, 14, 1, 1, 0, 0, 18, 20, 20, 18, 31, 0, 1, 1, 1, 15, 0, 17, 18, 31, 0, 17, 18, 19}, {31, 18, 19, 19, 20, 20, 19, 19, 18, 31, 0, 0, 0, 15, 11, 9, 10, 13, 15, 0, 0, 0, 17, 19, 20, 18, 18, 17, 0, 0, 1, 15, 0, 31, 0, 1, 15, 0, 31, 20}, {31, 18, 19, 21, 22, 21, 18, 17, 31, 1, 15, 15, 14, 14, 11, 8, 8, 10, 12, 1, 1, 1, 0, 17, 19, 19, 20, 21, 19, 17, 31, 0, 0, 0, 15, 13, 15, 1, 31, 19}, {0, 17, 18, 19, 21, 20, 31, 0, 1, 14, 13, 12, 13, 13, 11, 8, 8, 10, 11, 14, 1, 1, 1, 0, 18, 20, 20, 32, 22, 20, 19, 18, 31, 0, 15, 13, 15, 0, 31, 18}, {0, 17, 18, 19, 19, 18, 0, 14, 13, 13, 13, 12, 12, 12, 11, 10, 10, 11, 12, 14, 1, 15, 14, 0, 17, 32, -1, 32, 22, 20, 19, 18, 17, 31, 1, 14, 15, 0, 31, 31}, {17, 17, 18, 18, 18, 17, 0, 14, 12, 12, 13, 12, 12, 12, 11, 11, 11, 11, 12, 13, 1, 15, 15, 0, 32, 32, 19, 20, 20, 18, 18, 18, 31, 0, 1, 13, 13, 14, 1, 1}, {20, 19, 17, 17, 31, 31, 0, 15, 14, 12, 11, 11, 12, 13, 12, 12, 12, 12, 12, 13, 15, 15, 15, 15, -1, 31, 19, 19, 17, 17, 18, 17, 0, 0, 15, 12, 11, 12, 13, 14}, {22, 21, 20, 17, 31, 0, 1, 15, 15, 14, 12, 12, 13, 14, 14, 13, 13, 13, 13, 14, 1, 1, 14, 13, -1, 0, 31, 17, 0, 0, 31, 0, 0, 15, 13, 12, 13, 13, 14, 14}, {21, 20, 19, 17, 31, 17, 31, 31, 31, 0, 15, 13, 14, 14, 14, 14, 12, 12, 13, 15, 0, 0, 15, 13, 14, 32, 1, 0, 1, 15, 15, 1, 1, 13, 12, 12, 14, 15, 1, 1}, {20, 18, 31, 0, 17, 18, 18, 19, 17, 17, 31, 0, 0, 1, 14, 13, 14, 13, 13, 15, 0, 1, 14, 12, 13, 32, 14, 15, 14, 13, 13, 15, 15, 12, 11, 11, 13, 15, 1, 1}, {18, 31, 0, 0, 31, 17, 17, 18, 19, 20, 20, 19, 19, 31, 15, 15, 1, 0, 1, 0, 0, 1, 13, 11, -1, 14, 15, 14, 13, 13, 14, 15, 14, 13, 12, 12, 11, 12, 13, 15}, {0, 0, 15, 15, 1, 31, 17, 17, 20, 21, 21, 21, 21, 19, 31, 0, 0, 31, 17, 31, 31, 0, -1, 13, 14, 15, 1, 1, 14, 14, 15, 15, 14, 12, 13, 11, 9, 9, 10, 12}, {1, 14, 13, 12, 14, 1, 0, 31, 19, 20, 19, 20, 21, 20, 19, 17, 18, 19, 20, 18, 17, 0, 15, 14, 14, 15, 15, 14, 13, 14, 1, 1, 14, 13, 13, 11, 9, 9, 9, 10}, {14, 12, 12, 13, 14, 1, 0, 0, 17, 19, 18, 19, 19, 18, 19, 18, 20, 21, 20, 19, 18, 31, 0, 0, 1, 1, 15, 13, 13, 15, 0, 0, 15, 15, 14, 12, 11, 11, 11, 11}, {14, 11, 11, 15, 0, 0, 17, 31, 31, 18, 18, 17, 18, 19, 19, 19, 19, 20, 20, 20, 19, 18, 17, 0, 1, 1, 15, 13, 12, 13, 1, 0, 1, 15, 13, 12, 13, 14, 15, 14}, {14, 10, 11, 15, 0, 31, 17, 31, 0, 17, 31, 31, 18, 20, 19, 17, 31, -1, 20, 21, 20, 18, 17, 0, 0, 1, 15, 13, 12, 11, 14, 1, 15, 15, 14, 13, 15, 0, 0, 1}, {13, 11, 12, 15, 0, 0, 0, 31, 0, 0, 0, 17, 18, 18, 17, 0, 1, 0, 19, 21, 20, 18, 17, 17, 31, 1, 13, 12, 12, 13, 15, 1, 0, 0, 0, 1, 0, 17, 31, 0}, {1, 14, 15, 1, 0, 1, 15, 15, 1, 1, 0, 31, 31, 0, 0, 1, 15, 1, 17, 19, 21, 20, 19, 19, 17, 1, 12, 11, 11, 14, 1, 0, 31, 18, 18, 17, 18, 18, 18, 18}, {0, 0, 0, 0, 0, 1, 14, 13, 15, 1, 0, 0, 1, 14, 15, 15, 1, 0, 31, 18, 20, 20, 19, 19, 31, 1, 14, 12, 12, 14, 1, 0, 17, 19, 18, 18, 20, 20, 20, 21}, {0, 31, 31, 0, 0, 0, 1, 15, 1, 1, 1, 1, 15, 12, -1, 14, 1, 31, 18, 17, 18, 18, 18, 18, 31, 0, 15, 13, 13, 15, 0, 31, 19, 19, 19, 19, 21, 21, 20, 20}, {0, 31, 31, 0, 0, 0, 0, 0, 0, 15, 14, 14, 13, 12, -1, 13, 1, 0, 18, 17, 31, 17, 18, 18, 31, 0, 14, 13, 12, 13, 15, 31, 20, 22, 21, 20, 20, 20, 19, 18}, {0, 0, 31, 0, 0, 0, 17, 18, 31, 1, 15, 15, 15, 15, 32, 1, 0, 31, 17, 17, 0, 0, 31, 31, 0, 1, 13, 11, 11, 12, 14, 0, 19, 22, 22, 19, 19, 18, 17, 17}, {1, 0, 31, 0, 0, 18, 20, 21, 18, 0, 1, 0, 31, 31, 0, 31, 18, 18, 17, 31, 0, 0, 31, 0, 1, 15, 12, 11, 13, 13, 15, 31, 20, 23, 23, 21, 20, 19, 19, 19}, {0, 0, 0, 0, 17, 20, 22, 21, 18, 0, 1, 0, 18, 19, 18, 19, 21, 21, 19, 18, 17, 18, 18, 31, 1, 13, 13, 14, 15, 15, 0, 18, 21, 23, 23, 22, 22, 20, 20, 19}};
 
 	std::tuple<int, int> start(0, 0);
 	std::tuple<int, int> end(4, 4);
