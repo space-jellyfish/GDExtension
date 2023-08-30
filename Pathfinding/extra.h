@@ -168,3 +168,18 @@ Array vector_to_array_1d_reversed(std::vector<Vector3i>& vec) {
 	return ans;
 }
 */
+
+/*
+int z_hash(const Vector2i pos, const std::vector<std::vector<int>>& level) {
+	int hash = 0;
+
+	return hash;
+}
+
+int cell_hash(const Vector2i pos, int id) {
+	int hash = id;
+	hash ^= std::hash<int>{}(pos.x) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+	hash ^= std::hash<int>{}(pos.y) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+	return hash;
+}
+*/

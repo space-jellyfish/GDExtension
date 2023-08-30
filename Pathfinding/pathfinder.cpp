@@ -4,6 +4,10 @@ get lv array on ready, use set_cell to keep it updated
 treat cells outside lv array as wall
 non-player tiles can leave, but not enter membrane
 two +-2^12 tiles cannot merge
+
+Sources:
+https://en.wikipedia.org/wiki/Iterative_deepening_A*
+https://research.cs.wisc.edu/techreports/1970/TR88.pdf
 */
 
 #include "pathfinder.h"
@@ -11,6 +15,7 @@ two +-2^12 tiles cannot merge
 #include <queue>
 #include <unordered_map>
 #include <stack>
+#include <random>
 
 using namespace godot;
 
@@ -22,7 +27,7 @@ Array vector_to_array_2d(std::vector<std::vector<int>>& vec);
 
 //treats ZERO and EMPTY as different level states
 //for max performance, use EMPTY in place of ZERO in level (if 0s can be safely ignored)
-Array Pathfinder::pathfind(int search_type, const Array& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind(int search_type, const Array& level, Vector2i start, Vector2i end) {
 
 	//wall/membrane check
 	std::vector<std::vector<int>> level_vec = array_to_vector_2d(level);
@@ -36,32 +41,35 @@ Array Pathfinder::pathfind(int search_type, const Array& level, Vector2i start, 
 		return Array();
 	}
 
-	//generate random numbers for hashing
+	//hash initial state
+	size_t hash = z_hash(level_vec, start);
 
     switch(search_type) {
 		case SearchType::IDASTAR:
-			return pathfind_idastar(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_idastar(hash, level_vec, start, end);
 		case SearchType::ASTAR:
-			return pathfind_astar(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_astar(hash, level_vec, start, end);
 		case SearchType::STRAIGHT:
-			return pathfind_straight(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_straight(hash, level_vec, start, end);
 		case SearchType::MERGE_GREEDY:
-			return pathfind_merge_greedy(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_merge_greedy(hash, level_vec, start, end);
 		case SearchType::MERGE_LARGE_TO_SMALL:
-			return pathfind_merge_lts(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_merge_lts(hash, level_vec, start, end);
 		case SearchType::MERGE_SMALL_TO_LARGE:
-			return pathfind_merge_stl(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_merge_stl(hash, level_vec, start, end);
 		default:
-			return pathfind_idastar(level_vec, start, end, max_depth, tile_push_limit, is_player, tile_pow_max);
+			return pathfind_idastar(hash, level_vec, start, end);
 	}
 }
 
-Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind_idastar(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end) {
 
 	Vector2i level_size(level[0].size(), level.size());
 	std::stack<LevelStateDFS*, std::vector<LevelStateDFS*>> stack;
 	Array path;
-	std::unordered_map<std::pair<Vector2i, std::vector<std::vector<int>>>, LevelStateDFS*, LevelStateHasher, LevelStateEquator> in_path;
+	//std::unordered_map<std::pair<Vector2i, std::vector<std::vector<int>>>, LevelStateDFS*, LevelStateHasher, LevelStateEquator> in_path;
+	std::unordered_map<LevelStateDFS*, LevelStateDFS*, LevelStateHashGetter, LevelStateEquator> in_path;
+
 	int root_h = heuristic(start, end);
 	int threshold = root_h;
 	int next_threshold = std::numeric_limits<int>::max();
@@ -73,7 +81,8 @@ Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2
 	root->h = root_h;
 	root->f = root_h;
 	root->level = level;
-	in_path[std::make_pair(start, level)] = root;
+	root->hash = hash;
+	in_path[root] = root;
 	stack.push(root);
 
 	while (!stack.empty() || next_threshold != std::numeric_limits<int>::max()) {
@@ -85,7 +94,8 @@ Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2
 			first->h = root_h;
 			first->f = root_h;
 			first->level = level;
-			in_path[std::make_pair(start, level)] = first;
+			first->hash = hash;
+			in_path[first] = first;
 			stack.push(first);
 
 			//update threshold
@@ -101,7 +111,7 @@ Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2
 		if (curr->g) {
 			path.push_back(curr->prev_action);
 		}
-		in_path[std::make_pair(curr->pos, curr->level)] = curr;
+		in_path[curr] = curr;
 
 		//check if end
 		if (curr->pos == end) {
@@ -119,7 +129,7 @@ Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2
 		//check depth
 		if (curr->g < max_depth) {
 			//find neighbors
-			int curr_val = curr->level[curr->pos.y][curr->pos.x] % StuffId::MEMBRANE; //tile value
+			int curr_val = curr->level[curr->pos.y][curr->pos.x] & 0x1f; //tile value
 			bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::POS_ONE && curr_val != StuffId::ZERO);
 			std::vector<LevelStateDFS*> neighbors;
 
@@ -131,22 +141,25 @@ Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2
 				//dir is (x, y), action is (x, y, *)
 				for (Vector2i dir : {Vector2i(1, 0), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(0, 1)}) {
 					Vector3i action = Vector3i(dir.x, dir.y, action_type);
-					std::vector<std::vector<int>> temp_level = try_action(curr->level, curr->pos, action, tile_push_limit, is_player, tile_pow_max);
+					size_t temp_hash = curr->hash;
+					std::vector<std::vector<int>> temp_level = curr->level;
+					try_action(temp_hash, temp_level, curr->pos, action);
 
 					if (temp_level.empty()) { //action not possible
 						continue;
 					}
-					std::pair<Vector2i, std::vector<std::vector<int>>> key(curr->pos + dir, temp_level);
+					//std::pair<Vector2i, std::vector<std::vector<int>>> key(curr->pos + dir, temp_level);
 
-					if (!in_path.count(key)) { //create new level state
-						LevelStateDFS* temp = new LevelStateDFS(level_size);
-						temp->pos = curr->pos + dir;
+					LevelStateDFS* temp = new LevelStateDFS(level_size);
+					temp->pos = curr->pos + dir;
+					temp->level = temp_level;
+					temp->hash = temp_hash;
+					if (in_path.find(temp) == in_path.end()) { //find() uses both hasher and equator
 						temp->prev = curr;
 						temp->prev_action = action;
 						temp->g = curr->g + 1;
 						temp->h = heuristic(temp->pos, end);
 						temp->f = temp->g + temp->h;
-						temp->level = temp_level;
 
 						//add level state
 						if (temp->f <= threshold) {
@@ -155,6 +168,9 @@ Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2
 						else if (temp->f < next_threshold) { //update next threshold
 							next_threshold = temp->f;
 						}
+					}
+					else {
+						delete temp;
 					}
 				}
 			} //end find neighbors
@@ -184,7 +200,7 @@ Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2
 			if (!path.is_empty()) {
 				path.pop_back();
 			}
-			in_path.erase(std::make_pair(curr->pos, curr->level));
+			in_path.erase(curr);
 			delete curr;
 
 			//decrement parent child_count
@@ -201,11 +217,12 @@ Array Pathfinder::pathfind_idastar(std::vector<std::vector<int>>& level, Vector2
 	return Array();
 }
 
-Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind_astar(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end) {
 	
 	Vector2i level_size(level[0].size(), level.size());
 	std::priority_queue<LevelStateBFS*, std::vector<LevelStateBFS*>, LevelStateComparer> wavefront;
-	std::unordered_map<std::pair<Vector2i, std::vector<std::vector<int>>>, LevelStateBFS*, LevelStateHasher, LevelStateEquator> visited;
+	//std::unordered_map<std::pair<Vector2i, std::vector<std::vector<int>>>, LevelStateBFS*, LevelStateHasher, LevelStateEquator> visited;
+	std::unordered_map<LevelStateBFS*, LevelStateBFS*, LevelStateHashGetter, LevelStateEquator> visited;
 	
 	//add first level state
 	LevelStateBFS* first = new LevelStateBFS(level_size);
@@ -214,7 +231,8 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 	first->h = heuristic(start, end);
 	first->f = first->g + first->h;
 	first->level = level;
-	visited[std::make_pair(start, level)] = first;
+	first->hash = hash;
+	visited[first] = first;
 	wavefront.push(first);
 
 	//expand until end reaches top of queue
@@ -239,7 +257,7 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 		}
 
 		//add/update neighbors
-		int curr_val = curr->level[curr->pos.y][curr->pos.x] % StuffId::MEMBRANE; //tile value
+		int curr_val = curr->level[curr->pos.y][curr->pos.x] & 0x1f; //tile value
 		bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::POS_ONE && curr_val != StuffId::ZERO);
 
 		for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
@@ -250,16 +268,24 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 			//dir is (x, y), action is (x, y, *)
 			for (Vector2i dir : {Vector2i(1, 0), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(0, 1)}) {
 				Vector3i action = Vector3i(dir.x, dir.y, action_type);
-				std::vector<std::vector<int>> temp_level = try_action(curr->level, curr->pos, action, tile_push_limit, is_player, tile_pow_max);
+				size_t temp_hash = curr->hash;
+				std::vector<std::vector<int>> temp_level = curr->level;
+				try_action(temp_hash, temp_level, curr->pos, action);
 				//UtilityFunctions::print("PF TEMP LEVEL SIZE: ", (int)temp_level.size());
 
 				if (temp_level.empty()) { //action not possible
 					continue;
 				}
-				std::pair<Vector2i, std::vector<std::vector<int>>> key(curr->pos + dir, temp_level);
+				//std::pair<Vector2i, std::vector<std::vector<int>>> key(curr->pos + dir, temp_level);
 
-				if (visited.count(key)) { //level state exists
-					LevelStateBFS* temp = visited.at(key);
+				LevelStateBFS* temp = new LevelStateBFS(level_size);
+				temp->pos = curr->pos + dir;
+				temp->level = temp_level;
+				temp->hash = temp_hash;
+				auto old_it = visited.find(temp);
+				if (old_it != visited.end()) { //key exists
+					delete temp;
+					temp = old_it->second;
 
 					//if path better, update heuristic and prev
 					if (curr->g + 1 < temp->g) {
@@ -273,15 +299,12 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 					}
 				}
 				else { //create new level state
-					LevelStateBFS* temp = new LevelStateBFS(level_size);
-					temp->pos = curr->pos + dir;
 					temp->prev = curr;
 					temp->prev_action = action;
 					temp->g = curr->g + 1;
 					temp->h = heuristic(temp->pos, end);
 					temp->f = temp->g + temp->h;
-					temp->level = temp_level;
-					visited[key] = temp;
+					visited[temp] = temp;
 					wavefront.push(temp);
 				}
 			}
@@ -295,19 +318,19 @@ Array Pathfinder::pathfind_astar(std::vector<std::vector<int>>& level, Vector2i 
 	return Array(); //no path found
 }
 
-Array Pathfinder::pathfind_straight(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind_straight(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end) {
 	return Array();
 }
 
-Array Pathfinder::pathfind_merge_greedy(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind_merge_greedy(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end) {
 	return Array();
 }
 
-Array Pathfinder::pathfind_merge_lts(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind_merge_lts(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end) {
 	return Array();
 }
 
-Array Pathfinder::pathfind_merge_stl(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max) {
+Array Pathfinder::pathfind_merge_stl(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end) {
 	return Array();
 }
 
@@ -316,20 +339,20 @@ Array Pathfinder::pathfind_merge_stl(std::vector<std::vector<int>>& level, Vecto
 //assume cell at pos is a tile
 //assume tile_pow_max <= 14
 //returns updated level if action possible, else empty vector
-std::vector<std::vector<int>> Pathfinder::try_action(std::vector<std::vector<int>> level, Vector2i pos, Vector3i action, int tile_push_limit, bool is_player, int tile_pow_max) {
+void Pathfinder::try_action(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector3i action) {
 	Vector2i dir = Vector2i(action.x, action.y);
 
 	switch(action.z) {
 		case ActionType::SLIDE:
-			return try_slide(level, pos, dir, tile_push_limit, is_player, tile_pow_max);
+			try_slide(hash, level, pos, dir);
 		case ActionType::SPLIT:
-			return try_split(level, pos, dir, tile_push_limit, is_player, tile_pow_max);
+			try_split(hash, level, pos, dir);
 		default:
-			return try_slide(level, pos, dir, tile_push_limit, is_player, tile_pow_max);
+			try_slide(hash, level, pos, dir);
 	}
 }
 
-std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, int tile_push_limit, bool is_player, int tile_pow_max) {
+void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir) {
 	std::function<bool(Vector2i)> within_bounds;
 	if (dir.x) {
 		if (dir.x > 0) {
@@ -350,7 +373,7 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 
 	Vector2i curr_pos = pos;
 	int curr_val = level[pos.y][pos.x];
-	int curr_tile_val = curr_val % StuffId::MEMBRANE;
+	int curr_tile_val = curr_val & 0x1f;
 	std::vector<int> tile_vals = {curr_tile_val}; //store these bc mod is expensive
 
 	Vector2i next_pos;
@@ -361,16 +384,22 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 	do {
 		//next_pos, bound check
 		next_pos = curr_pos + dir;
-		if (!within_bounds(next_pos) || next_val == StuffId::BLACK_WALL || next_val == StuffId::BLUE_WALL || next_val == StuffId::RED_WALL) {
-			return std::vector<std::vector<int>>(); //obstructed by wall or out of bounds
+		if (!within_bounds(next_pos)) {
+			level.clear();
+			return; //out of bounds
 		}
 
 		next_val = level[next_pos.y][next_pos.x];
+		if (next_val < 0) {
+			level.clear();
+			return; //obstructed by wall
+		}
 		if ((!is_player || tile_push_count) && next_val >> 5 == 1) {
-			return std::vector<std::vector<int>>(); //obstructed by membrane
+			level.clear();
+			return; //obstructed by membrane
 		}
 
-		next_tile_val = next_val % StuffId::MEMBRANE;
+		next_tile_val = next_val & 0x1f;
 		int curr_tile_pow = abs(curr_tile_val - StuffId::ZERO);
 		int next_tile_pow = abs(next_tile_val - StuffId::ZERO);
 		bool mergeable_pows = (curr_tile_pow == next_tile_pow && curr_tile_pow != tile_pow_max);
@@ -422,9 +451,9 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 
 			//curr_pos is now pos
 			level[curr_pos.y][curr_pos.x] -= temp_val;
-			return level;
+			return;
 		}
-		else if (next_val == StuffId::MEMBRANE || next_val == StuffId::EMPTY || next_val == StuffId::SAVEPOINT || next_val == StuffId::GOAL) { //slide
+		else if ((next_val & 0x1f) == 0) { //slide
 			//shift line
 			int temp_val = next_tile_val;
 			while (!tile_vals.empty()) {
@@ -436,7 +465,7 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 
 			//next_pos is now pos
 			level[next_pos.y][next_pos.x] -= temp_val;
-			return level;
+			return;
 		}
 
 		curr_pos = next_pos;
@@ -447,17 +476,18 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 	} while (tile_push_count <= tile_push_limit);
 
 	//push limit exceeded
-	return std::vector<std::vector<int>>();
+	level.clear();
 }
 
 //assume tile val can split
-std::vector<std::vector<int>> Pathfinder::try_split(std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, int tile_push_limit, bool is_player, int tile_pow_max) {
+void Pathfinder::try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir) {
 	Vector2i target = pos + dir;
 	if (target.x < 0 || target.y < 0 || target.x >= level[0].size() || target.y >= level.size()) { //out of bounds
-		return std::vector<std::vector<int>>();
+		level.clear();
+		return;
 	}
 
-	int tile_val = level[pos.y][pos.x] % StuffId::MEMBRANE; //don't care about back layer at pos
+	int tile_val = level[pos.y][pos.x] & 0x1f; //don't care about back layer at pos
 	int pow_sign = (tile_val > StuffId::ZERO) ? 1 : -1;
 	int tile_pow = abs(tile_val - StuffId::ZERO);
 	if (tile_pow == 1) {
@@ -466,14 +496,13 @@ std::vector<std::vector<int>> Pathfinder::try_split(std::vector<std::vector<int>
 
 	//use try_slide() to handle push logic, then set splitted tile
 	level[pos.y][pos.x] -= pow_sign;
-	std::vector<std::vector<int>> ans = try_slide(level, pos, dir, tile_push_limit, is_player, tile_pow_max);
-	if (ans.empty()) { //slide, and by extension split, not possible
-		return ans;
+	try_slide(hash, level, pos, dir);
+	if (level.empty()) { //slide, and by extension split, not possible
+		return;
 	}
 
 	int split_val = tile_val - pow_sign;
-	ans[pos.y][pos.x] += split_val;
-	return ans;
+	level[pos.y][pos.x] += split_val;
 }
 
 //simple floodfill using A*
@@ -524,9 +553,62 @@ int Pathfinder::heuristic(Vector2i pos, Vector2i goal) {
 	return abs(pos.x - goal.x) + abs(pos.y - goal.y);
 }
 
-int z_hash(const Vector2i pos, const std::vector<std::vector<int>>& level) {
-	int hash = 0;
 
+//generate array of random numbers used for zobrist hashing
+//to access random number, use [pos.y][pos.x][s_id - StuffId::RED_WALL]
+void Pathfinder::generate_hash_numbers(Vector2i resolution_t) {
+	static bool generated = false;
+	if (generated) {
+		return;
+	}
+	//random size_t generator
+	//std::random_device rd;
+	std::mt19937_64 generator(0); //fixed seed is okay
+	std::uniform_int_distribution<size_t> distribution(std::numeric_limits<size_t>::min(), std::numeric_limits<size_t>::max()); //inclusive?
+
+	//level hash numbers
+	level_hash_numbers.reserve(resolution_t.y);
+
+	for (int y=0; y < resolution_t.y; ++y) {
+		std::vector<std::vector<size_t>> row;
+		row.reserve(resolution_t.x);
+
+		for (int x=0; x < resolution_t.x; ++x) {
+			std::vector<size_t> stuff;
+			stuff.reserve(StuffId::MEMBRANE);
+
+			stuff.push_back(0); //no tile at cell
+			for (int tile_val=1; tile_val < StuffId::MEMBRANE; ++tile_val) {
+				stuff.push_back(distribution(generator));
+			}
+			row.push_back(stuff);
+		}
+		level_hash_numbers.push_back(row);
+	}
+
+	//pos hash numbers
+	x_hash_numbers.reserve(resolution_t.x);
+	y_hash_numbers.reserve(resolution_t.y);
+	for (int x=0; x < resolution_t.x; ++x) {
+		x_hash_numbers.push_back(distribution(generator));
+	}
+	for (int y=0; y < resolution_t.y; ++y) {
+		y_hash_numbers.push_back(distribution(generator));
+	}
+
+	generated = true;
+}
+
+size_t Pathfinder::z_hash(const std::vector<std::vector<int>>& level, const Vector2i pos) {
+	size_t hash = 0;
+	for (int y=0; y < level.size(); ++y) {
+		for (int x=0; x < level[0].size(); ++x) {
+			int tile_val = level[y][x] & 0x1f;
+			hash ^= level_hash_numbers[y][x][tile_val];
+		}
+	}
+	hash ^= x_hash_numbers[pos.x];
+	hash ^= y_hash_numbers[pos.y];
 	return hash;
 }
 

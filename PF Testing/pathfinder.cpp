@@ -127,7 +127,7 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_idastar(const std::v
 		//check depth
 		if (curr->g < max_depth) {
 			//find neighbors
-			int curr_val = curr->level[std::get<1>(curr->pos)][std::get<0>(curr->pos)] % StuffId::MEMBRANE; //tile value
+			int curr_val = curr->level[std::get<1>(curr->pos)][std::get<0>(curr->pos)] & 0x1f; //tile value
 			bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::POS_ONE && curr_val != StuffId::ZERO);
 			std::vector<LevelStateDFS*> neighbors;
 
@@ -250,7 +250,7 @@ std::vector<std::tuple<int, int, int>> Pathfinder::pathfind_astar(const std::vec
 		}
 
 		//add/update neighbors
-		int curr_val = curr->level[std::get<1>(curr->pos)][std::get<0>(curr->pos)] % StuffId::MEMBRANE; //tile value
+		int curr_val = curr->level[std::get<1>(curr->pos)][std::get<0>(curr->pos)] & 0x1f; //tile value
 		bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::POS_ONE && curr_val != StuffId::ZERO);
 
 		for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
@@ -363,7 +363,7 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 
 	std::tuple<int, int> curr_pos = pos;
 	int curr_val = level[std::get<1>(pos)][std::get<0>(pos)];
-	int curr_tile_val = curr_val % StuffId::MEMBRANE;
+	int curr_tile_val = curr_val & 0x1f;
 	std::vector<int> tile_vals = {curr_tile_val}; //store these bc mod is expensive
 
 	std::tuple<int, int> next_pos;
@@ -374,17 +374,20 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 	do {
 		//next_pos, bound check
 		next_pos = add(curr_pos, dir);
-		if (!within_bounds(next_pos) || next_val == StuffId::BLACK_WALL || next_val == StuffId::BLUE_WALL || next_val == StuffId::RED_WALL) {
+		if (!within_bounds(next_pos)) {
 			//std::cout << "OUT OF BOUNDS" << std::endl;
-			return std::vector<std::vector<int>>(); //obstructed by wall or out of bounds
+			return std::vector<std::vector<int>>(); //out of bounds
 		}
 
 		next_val = level[std::get<1>(next_pos)][std::get<0>(next_pos)];
+		if (next_val < 0) {
+			return std::vector<std::vector<int>>(); //obstructed by wall
+		}
 		if ((!is_player || tile_push_count) && next_val >> 5 == 1) {
 			return std::vector<std::vector<int>>(); //obstructed by membrane
 		}
 
-		next_tile_val = next_val % StuffId::MEMBRANE;
+		next_tile_val = next_val & 0x1f;
 		int curr_tile_pow = abs(curr_tile_val - StuffId::ZERO);
 		int next_tile_pow = abs(next_tile_val - StuffId::ZERO);
 		bool mergeable_pows = (curr_tile_pow == next_tile_pow && curr_tile_pow != tile_pow_max);
@@ -440,7 +443,7 @@ std::vector<std::vector<int>> Pathfinder::try_slide(std::vector<std::vector<int>
 			//print_vector_2d(level);
 			return level;
 		}
-		else if (next_val == StuffId::MEMBRANE || next_val == StuffId::EMPTY || next_val == StuffId::SAVEPOINT || next_val == StuffId::GOAL) { //slide
+		else if ((next_val & 0x1f) == 0) { //slide
 			//shift line
 			int temp_val = next_tile_val;
 			while (!tile_vals.empty()) {
@@ -475,7 +478,7 @@ std::vector<std::vector<int>> Pathfinder::try_split(std::vector<std::vector<int>
 		return std::vector<std::vector<int>>();
 	}
 
-	int tile_val = level[std::get<1>(pos)][std::get<0>(pos)] % StuffId::MEMBRANE; //don't care about back layer at pos
+	int tile_val = level[std::get<1>(pos)][std::get<0>(pos)] & 0x1f; //don't care about back layer at pos
 	int pow_sign = (tile_val > StuffId::ZERO) ? 1 : -1;
 	int tile_pow = abs(tile_val - StuffId::ZERO);
 	if (tile_pow == 1) {

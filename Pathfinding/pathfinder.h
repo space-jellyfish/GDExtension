@@ -43,21 +43,34 @@ enum SearchType {
 
 class Pathfinder : public Node {
 	GDCLASS(Pathfinder, Node);
+	const int CELL_VALUE_COUNT = 131;
+	const int TILE_VALUE_COUNT = 31;
 	
 public:
-    Array pathfind(int search_type, const Array& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	Array pathfind_idastar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	Array pathfind_astar(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	Array pathfind_straight(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	Array pathfind_merge_greedy(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	Array pathfind_merge_lts(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	Array pathfind_merge_stl(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, int max_depth, int tile_push_limit, bool is_player, int tile_pow_max);
-	std::vector<std::vector<int>> try_action(std::vector<std::vector<int>> level, Vector2i pos, Vector3i action, int tile_push_limit, bool is_player, int tile_pow_max);
-	std::vector<std::vector<int>> try_slide(std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, int tile_push_limit, bool is_player, int tile_pow_max);
-	std::vector<std::vector<int>> try_split(std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, int tile_push_limit, bool is_player, int tile_pow_max);
+	static std::vector<std::vector<std::vector<size_t>>> level_hash_numbers; //don't regenerate for every tile
+	static std::vector<size_t> x_hash_numbers;
+	static std::vector<size_t> y_hash_numbers;
+	static int tile_pow_max;
+	int max_depth;
+	int tile_push_limit;
+	bool is_player;
+
+	//Pathfinder(Vector2i resolution_t);
+    Array pathfind(int search_type, const Array& level, Vector2i start, Vector2i end);
+	Array pathfind_idastar(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
+	Array pathfind_astar(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
+	Array pathfind_straight(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
+	Array pathfind_merge_greedy(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
+	Array pathfind_merge_lts(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
+	Array pathfind_merge_stl(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
+	void try_action(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector3i action);
+	void try_slide(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir);
+	void try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir);
 	bool is_enclosed(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, bool is_player);
 	int heuristic(Vector2i pos, Vector2i goal);
-	int z_hash(const Vector2i pos, const std::vector<std::vector<int>>& level);
+
+	static void generate_hash_numbers(Vector2i resolution_t); //call in _init()
+	size_t z_hash(const std::vector<std::vector<int>>& level, const Vector2i pos);
 	void testing();
 
 protected:
@@ -73,6 +86,8 @@ struct LevelState {
 	int f = std::numeric_limits<int>::max();
 	//level
 	std::vector<std::vector<int>> level;
+	//hash (only encodes tile values and locations)
+	size_t hash = 0;
 
 	LevelState(Vector2i level_size);
 };
@@ -91,6 +106,7 @@ struct LevelStateDFS : LevelState {
 	using LevelState::LevelState;
 };
 
+
 //if f tied, use g; higher g indicates higher confidence
 struct LevelStateComparer {
 	bool operator() (LevelState* first, LevelState* second) {
@@ -104,7 +120,7 @@ struct LevelStateComparer {
 	}
 };
 
-struct LevelStateHasher {
+struct LevelStateKeyHasher {
     std::size_t operator() (const std::pair<Vector2i, std::vector<std::vector<int>>>& state) const {
         std::size_t hash = 0;
 
@@ -120,9 +136,21 @@ struct LevelStateHasher {
     }
 };
 
-struct LevelStateEquator {
+struct LevelStateKeyEquator {
 	bool operator() (const std::pair<Vector2i, std::vector<std::vector<int>>>& state1, const std::pair<Vector2i, std::vector<std::vector<int>>>& state2) const {
 		return state1 == state2; //this works
+	}
+};
+
+struct LevelStateHashGetter {
+	std::size_t operator() (const LevelState* state) const {
+		return state->hash;
+	}
+};
+
+struct LevelStateEquator {
+	bool operator() (const LevelState* first, const LevelState* second) const {
+		return (first->pos == second->pos && first->level == second->level);
 	}
 };
 

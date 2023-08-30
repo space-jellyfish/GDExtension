@@ -126,6 +126,10 @@
     "functional": "cpp",
     "iterator": "cpp",
     "utility": "cpp",
-    "stack": "cpp"
+    "stack": "cpp",
+    "fstream": "cpp",
+    "iomanip": "cpp",
+    "numeric": "cpp",
+    "random": "cpp"
   }
 }
