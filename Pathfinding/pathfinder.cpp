@@ -411,6 +411,7 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 					int temp_val = level[temp_pos.y][temp_pos.x];
 					if (temp_val == StuffId::EMPTY || temp_val == StuffId::SAVEPOINT || temp_val == StuffId::GOAL) {
 						level[temp_pos.y][temp_pos.x] += StuffId::ZERO;
+						update_hash_tile(hash, temp_pos, StuffId::ZERO);
 					}
 				} //else 0 gets popped
 			}
@@ -419,23 +420,33 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 			if (curr_tile_val == StuffId::ZERO) {}
 			else if (next_tile_val == StuffId::ZERO) {
 				level[next_pos.y][next_pos.x] += curr_tile_val - next_tile_val;
+				update_hash_tile(hash, next_pos, next_tile_val);
+				update_hash_tile(hash, next_pos, curr_tile_val);
 			}
 			else if (curr_tile_val == StuffId::POS_ONE || curr_tile_val == StuffId::NEG_ONE) { //ones
 				if (curr_tile_val + next_tile_val == StuffId::MEMBRANE) { //opposite sign
 					level[next_pos.y][next_pos.x] += StuffId::ZERO - next_tile_val;
+					update_hash_tile(hash, next_pos, next_tile_val);
+					update_hash_tile(hash, next_pos, StuffId::ZERO);
 				}
 				else { //same sign
 					int dval = (curr_tile_val > StuffId::ZERO) ? -14 : 14;
 					level[next_pos.y][next_pos.x] += dval;
+					update_hash_tile(hash, next_pos, next_tile_val);
+					update_hash_tile(hash, next_pos, next_tile_val + dval);
 				}
 			}
 			else {
 				if (curr_tile_pow + next_tile_pow == StuffId::MEMBRANE) { //opposite sign
 					level[next_pos.y][next_pos.x] += StuffId::ZERO - next_tile_val;
+					update_hash_tile(hash, next_pos, next_tile_val);
+					update_hash_tile(hash, next_pos, StuffId::ZERO);
 				}
 				else { //same sign
 					int pow_sign = (curr_tile_val > StuffId::ZERO) ? 1 : -1;
 					level[next_pos.y][next_pos.x] += pow_sign;
+					update_hash_tile(hash, next_pos, next_tile_val);
+					update_hash_tile(hash, next_pos, next_tile_val + pow_sign);
 				}
 			}
 
@@ -444,6 +455,8 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 			tile_vals.pop_back();
 			while (!tile_vals.empty()) {
 				level[curr_pos.y][curr_pos.x] += tile_vals.back() - temp_val;
+				update_hash_tile(hash, curr_pos, temp_val);
+				update_hash_tile(hash, curr_pos, tile_vals.back());
 				temp_val = tile_vals.back();
 				tile_vals.pop_back();
 				curr_pos -= dir;
@@ -451,6 +464,8 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 
 			//curr_pos is now pos
 			level[curr_pos.y][curr_pos.x] -= temp_val;
+			update_hash_tile(hash, curr_pos, temp_val);
+			update_hash_pos(hash, pos, pos + dir);
 			return;
 		}
 		else if ((next_val & 0x1f) == 0) { //slide
@@ -458,6 +473,8 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 			int temp_val = next_tile_val;
 			while (!tile_vals.empty()) {
 				level[next_pos.y][next_pos.x] += tile_vals.back() - temp_val;
+				update_hash_tile(hash, next_pos, temp_val);
+				update_hash_tile(hash, next_pos, tile_vals.back());
 				temp_val = tile_vals.back();
 				tile_vals.pop_back();
 				next_pos -= dir;
@@ -465,6 +482,8 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 
 			//next_pos is now pos
 			level[next_pos.y][next_pos.x] -= temp_val;
+			update_hash_tile(hash, next_pos, temp_val);
+			update_hash_pos(hash, pos, pos + dir);
 			return;
 		}
 
@@ -503,6 +522,7 @@ void Pathfinder::try_split(size_t& hash, std::vector<std::vector<int>>& level, V
 
 	int split_val = tile_val - pow_sign;
 	level[pos.y][pos.x] += split_val;
+	update_hash_tile(hash, pos, tile_val);
 }
 
 //simple floodfill using A*
@@ -610,6 +630,21 @@ size_t Pathfinder::z_hash(const std::vector<std::vector<int>>& level, const Vect
 	hash ^= x_hash_numbers[pos.x];
 	hash ^= y_hash_numbers[pos.y];
 	return hash;
+}
+
+void Pathfinder::update_hash_pos(size_t& hash, Vector2i prev, Vector2i next) {
+	if (prev.x != next.x) {
+		hash ^= x_hash_numbers[prev.x];
+		hash ^= x_hash_numbers[next.x];
+	}
+	if (prev.y != next.y) {
+		hash ^= y_hash_numbers[prev.y];
+		hash ^= y_hash_numbers[next.y];
+	}
+}
+
+void Pathfinder::update_hash_tile(size_t& hash, Vector2i pos, int tile_val) {
+	hash ^= level_hash_numbers[pos.y][pos.x][tile_val];
 }
 
 void Pathfinder::testing() {

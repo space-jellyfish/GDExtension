@@ -71,6 +71,8 @@ public:
 
 	static void generate_hash_numbers(Vector2i resolution_t); //call in _init()
 	size_t z_hash(const std::vector<std::vector<int>>& level, const Vector2i pos);
+	void update_hash_pos(size_t& hash, Vector2i prev, Vector2i next);
+	void update_hash_tile(size_t& hash, Vector2i pos, int tile_val);
 	void testing();
 
 protected:
