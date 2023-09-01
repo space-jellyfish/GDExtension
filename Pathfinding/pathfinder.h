@@ -9,6 +9,10 @@
 //#include <godot_cpp/variant/typed_array.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/variant.hpp>
+#include <godot_cpp/core/memory.hpp>
+#include <godot_cpp/classes/wrapped.hpp>
+#include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/string_name.hpp>
 
 using namespace godot;
 
@@ -45,12 +49,24 @@ class Pathfinder : public Node {
 	GDCLASS(Pathfinder, Node);
 	const int CELL_VALUE_COUNT = 131;
 	const int TILE_VALUE_COUNT = 31;
+
+	char* gv_path_cstr = "/root/GV";
+	String gv_path_str = String(gv_path_cstr);
+	NodePath gv_path = NodePath(gv_path_str);
+	Node* gv = get_node<Node>(gv_path);
+
+	char* level_hash_numbers_cstr = "level_hash_numbers";
+	char* x_hash_numbers_cstr = "x_hash_numbers";
+	char* y_hash_numbers_cstr = "y_hash_numbers";
+	StringName level_hash_numbers_str = StringName(level_hash_numbers_cstr);
+	StringName x_hash_numbers_str = StringName(x_hash_numbers_cstr);
+	StringName y_hash_numbers_str = StringName(y_hash_numbers_cstr);
+	Array level_hash_numbers = gv->get(level_hash_numbers_str); //reference
+	Array x_hash_numbers = gv->get(x_hash_numbers_str);
+	Array y_hash_numbers = gv->get(y_hash_numbers_str);
 	
 public:
-	static std::vector<std::vector<std::vector<size_t>>> level_hash_numbers; //don't regenerate for every tile
-	static std::vector<size_t> x_hash_numbers;
-	static std::vector<size_t> y_hash_numbers;
-	static int tile_pow_max;
+	int tile_pow_max;
 	int max_depth;
 	int tile_push_limit;
 	bool is_player;
@@ -69,7 +85,7 @@ public:
 	bool is_enclosed(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, bool is_player);
 	int heuristic(Vector2i pos, Vector2i goal);
 
-	static void generate_hash_numbers(Vector2i resolution_t); //call in _init()
+	void generate_hash_numbers(Vector2i resolution_t); //inits hash number arrays in GV
 	size_t z_hash(const std::vector<std::vector<int>>& level, const Vector2i pos);
 	void update_hash_pos(size_t& hash, Vector2i prev, Vector2i next);
 	void update_hash_tile(size_t& hash, Vector2i pos, int tile_val);
@@ -92,12 +108,14 @@ struct LevelState {
 	size_t hash = 0;
 
 	LevelState(Vector2i level_size);
+	//void reserve_level(Vector2i level_size);
 };
 
 struct LevelStateBFS : LevelState {
 	LevelStateBFS* prev = NULL;
 
 	using LevelState::LevelState;
+	//LevelStateBFS(Vector2i level_size);
 	Array trace_path();
 };
 
@@ -106,6 +124,7 @@ struct LevelStateDFS : LevelState {
 	int child_count = 0;
 
 	using LevelState::LevelState;
+	//LevelStateDFS(Vector2i level_size);
 };
 
 

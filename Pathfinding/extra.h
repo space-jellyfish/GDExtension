@@ -183,3 +183,110 @@ int cell_hash(const Vector2i pos, int id) {
 	return hash;
 }
 */
+
+/*
+std::vector<int> array_to_vector_1d_int(const Array& arr) {
+	std::vector<int> ans;
+	for (int i=0; i < arr.size(); ++i) {
+		ans.push_back(int32_t(arr[i]));
+	}
+	return ans;
+}
+
+std::vector<std::vector<int>> array_to_vector_2d_int(const Array& arr) {
+	std::vector<std::vector<int>> ans;
+	for (int i=0; i < arr.size(); ++i) {
+		ans.push_back(array_to_vector_1d_int((const Array&) arr[i]));
+	}
+	return ans;
+}
+
+std::vector<size_t> array_to_vector_1d_size_t(const Array& arr) {
+	std::vector<size_t> ans;
+	for (int i=0; i < arr.size(); ++i) {
+		ans.push_back(uint64_t(arr[i]));
+	}
+	return ans;
+}
+
+std::vector<std::vector<size_t>> array_to_vector_2d_size_t(const Array& arr) {
+	std::vector<std::vector<size_t>> ans;
+	for (int i=0; i < arr.size(); ++i) {
+		ans.push_back(array_to_vector_1d_size_t(arr[i]));
+	}
+	return ans;
+}
+
+std::vector<std::vector<std::vector<size_t>>> array_to_vector_3d_size_t(const Array& arr) {
+	std::vector<std::vector<std::vector<size_t>>> ans;
+	for (int i=0; i < arr.size(); ++i) {
+		ans.push_back(array_to_vector_2d_size_t(arr[i]));
+	}
+	return ans;
+}
+
+std::vector<int> array_to_vector_1d_int(const Array& arr);
+std::vector<std::vector<int>> array_to_vector_2d_int(const Array& arr);
+std::vector<size_t> array_to_vector_1d_size_t(const Array& arr);
+std::vector<std::vector<size_t>> array_to_vector_2d_size_t(const Array& arr);
+std::vector<std::vector<std::vector<size_t>>> array_to_vector_3d_size_t(const Array& arr);
+*/
+
+/*
+void Pathfinder::set_hash_numbers(const Array& level_nums, const Array& x_nums, const Array& y_nums) {
+	level_hash_numbers = array_to_vector_3d<size_t>(level_nums);
+	x_hash_numbers = array_to_vector_1d<size_t>(x_nums);
+	y_hash_numbers = array_to_vector_1d<size_t>(y_nums);
+}
+*/
+
+/*
+	std::vector<std::vector<std::vector<size_t>>> level_hash_numbers; //don't regenerate for every tile
+	std::vector<size_t> x_hash_numbers;
+	std::vector<size_t> y_hash_numbers;
+
+//generate array of random numbers used for zobrist hashing
+//to access random number, use [pos.y][pos.x][s_id - StuffId::RED_WALL]
+void Pathfinder::generate_hash_numbers(Vector2i resolution_t) {
+	//static bool generated = false;
+	if (!level_hash_numbers.empty()) {
+		return;
+	}
+	//random size_t generator
+	//std::random_device rd;
+	std::mt19937_64 generator(0); //fixed seed is okay
+	std::uniform_int_distribution<size_t> distribution(std::numeric_limits<size_t>::min(), std::numeric_limits<size_t>::max()); //inclusive?
+
+	//level hash numbers
+	level_hash_numbers.reserve(resolution_t.y);
+
+	for (int y=0; y < resolution_t.y; ++y) {
+		std::vector<std::vector<size_t>> row;
+		row.reserve(resolution_t.x);
+
+		for (int x=0; x < resolution_t.x; ++x) {
+			std::vector<size_t> stuff;
+			stuff.reserve(StuffId::MEMBRANE);
+
+			stuff.push_back(0); //no tile at cell
+			for (int tile_val=1; tile_val < StuffId::MEMBRANE; ++tile_val) {
+				stuff.push_back(distribution(generator));
+			}
+			row.push_back(stuff);
+		}
+		level_hash_numbers.push_back(row);
+	}
+
+	//pos hash numbers
+	x_hash_numbers.reserve(resolution_t.x);
+	y_hash_numbers.reserve(resolution_t.y);
+	for (int x=0; x < resolution_t.x; ++x) {
+		x_hash_numbers.push_back(distribution(generator));
+	}
+	for (int y=0; y < resolution_t.y; ++y) {
+		y_hash_numbers.push_back(distribution(generator));
+	}
+
+	//generated = true;
+}
+*/
