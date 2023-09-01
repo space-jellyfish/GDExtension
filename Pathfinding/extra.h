@@ -290,3 +290,63 @@ void Pathfinder::generate_hash_numbers(Vector2i resolution_t) {
 	//generated = true;
 }
 */
+
+/* void _ready() override;
+void Pathfinder::_ready() {
+	//get gv and hash number array refs
+	gv = get_node<Node>(gv_path);
+	level_hash_numbers = gv->get(level_hash_numbers_str);
+	x_hash_numbers = gv->get(x_hash_numbers_str);
+	y_hash_numbers = gv->get(y_hash_numbers_str);
+}
+*/
+
+/*
+	const char* gv_path_cstr = "/root/GV";
+	String gv_path_str = String(gv_path_cstr);
+	NodePath gv_path = NodePath(gv_path_str);
+*/
+
+/*
+	int id = 0;
+	Variant give;
+
+	void set_id(int _id);
+	int get_id();
+
+	void set_give(Variant _give);
+	Variant get_give();
+
+void Pathfinder::set_id(int _id) {
+	id = _id;
+}
+
+int Pathfinder::get_id() {
+	return id;
+}
+
+void Pathfinder::set_give(Variant _give) {
+	give = _give;
+}
+
+Variant Pathfinder::get_give() {
+	return give;
+}
+
+	ClassDB::bind_method(D_METHOD("set_id", "_id"), &Pathfinder::set_id);
+	ClassDB::bind_method(D_METHOD("get_id"), &Pathfinder::get_id);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "id"), "set_id", "get_id");
+
+	ClassDB::bind_method(D_METHOD("set_give", "_give"), &Pathfinder::set_give);
+	ClassDB::bind_method(D_METHOD("get_give"), &Pathfinder::get_give);
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "give"), "set_give", "get_give");
+*/
+
+/*
+
+
+private:
+	static std::vector<std::vector<std::vector<size_t>>> level_hash_numbers;
+	static std::vector<size_t> x_hash_numbers;
+	static std::vector<size_t> y_hash_numbers;
+*/

@@ -575,6 +575,14 @@ int Pathfinder::heuristic(Vector2i pos, Vector2i goal) {
 	return abs(pos.x - goal.x) + abs(pos.y - goal.y);
 }
 
+void Pathfinder::testing() {
+	UtilityFunctions::print("PF TESTING");
+	//while (1);
+	Array test;
+	test.push_back(Array());
+	Array first_row = test[0];
+	int i = first_row[0];
+}
 
 //generate array of random numbers used for zobrist hashing
 //to access random number, use [pos.y][pos.x][s_id - StuffId::RED_WALL]
@@ -592,31 +600,33 @@ void Pathfinder::generate_hash_numbers(Vector2i resolution_t) {
 
 	for (int y=0; y < resolution_t.y; ++y) {
 		//std::vector<std::vector<size_t>> row;
-		Array row;
+		Array row = Array();
+		level_hash_numbers[y] = row;
 		row.resize(resolution_t.x);
 
 		for (int x=0; x < resolution_t.x; ++x) {
 			//std::vector<size_t> stuff;
-			Array stuff;
+			Array stuff = Array();
+			row[x] = stuff;
 			stuff.resize(StuffId::MEMBRANE);
 
-			stuff.push_back(0); //no tile at cell
+			stuff[0] = 0; //no tile at cell
 			for (int tile_val=1; tile_val < StuffId::MEMBRANE; ++tile_val) {
-				stuff.push_back(uint64_t(distribution(generator)));
+				stuff[tile_val] = uint64_t(distribution(generator));
 			}
-			row.push_back(stuff);
+			//row.push_back(stuff);
 		}
-		level_hash_numbers.push_back(row);
+		//level_hash_numbers.push_back(row);
 	}
 
 	//pos hash numbers
 	x_hash_numbers.resize(resolution_t.x);
 	y_hash_numbers.resize(resolution_t.y);
 	for (int x=0; x < resolution_t.x; ++x) {
-		x_hash_numbers.push_back(uint64_t(distribution(generator)));
+		x_hash_numbers[x] = uint64_t(distribution(generator));
 	}
 	for (int y=0; y < resolution_t.y; ++y) {
-		y_hash_numbers.push_back(uint64_t(distribution(generator)));
+		y_hash_numbers[y] = uint64_t(distribution(generator));
 	}
 }
 
@@ -628,10 +638,13 @@ size_t Pathfinder::z_hash(const std::vector<std::vector<int>>& level, const Vect
 			Array cell = row[x];
 			int tile_val = level[y][x] & 0x1f;
 			hash ^= uint64_t(cell[tile_val]);
+			//hash ^= level_hash_numbers[y][x][tile_val];
 		}
 	}
 	hash ^= uint64_t(x_hash_numbers[pos.x]);
 	hash ^= uint64_t(y_hash_numbers[pos.y]);
+	//hash ^= x_hash_numbers[pos.x];
+	//hash ^= y_hash_numbers[pos.y];
 	return hash;
 }
 
@@ -639,10 +652,14 @@ void Pathfinder::update_hash_pos(size_t& hash, Vector2i prev, Vector2i next) {
 	if (prev.x != next.x) {
 		hash ^= uint64_t(x_hash_numbers[prev.x]);
 		hash ^= uint64_t(x_hash_numbers[next.x]);
+		//hash ^= x_hash_numbers[prev.x];
+		//hash ^= x_hash_numbers[next.x];
 	}
 	if (prev.y != next.y) {
 		hash ^= uint64_t(y_hash_numbers[prev.y]);
 		hash ^= uint64_t(y_hash_numbers[next.y]);
+		//hash ^= y_hash_numbers[prev.y];
+		//hash ^= y_hash_numbers[next.y];
 	}
 }
 
@@ -653,13 +670,55 @@ void Pathfinder::update_hash_tile(size_t& hash, Vector2i pos, int tile_val) {
 	hash ^= uint64_t(cell[tile_val]);
 }
 
-void Pathfinder::testing() {
-	UtilityFunctions::print("PF TESTING");
-	//while (1);
-	Array test;
-	test.push_back(Array());
-	Array first_row = test[0];
-	int i = first_row[0];
+void Pathfinder::get_hash_arrays() {
+	level_hash_numbers = gv.get(level_hash_numbers_strn);
+	x_hash_numbers = gv.get(x_hash_numbers_strn);
+	y_hash_numbers = gv.get(y_hash_numbers_strn);
+}
+
+void Pathfinder::set_gv(Variant _gv) {
+	gv = _gv;
+	//level_hash_numbers = gv->get(level_hash_numbers_str);
+	//x_hash_numbers = gv->get(level_hash_numbers_str);
+	//y_hash_numbers = gv->get(level_hash_numbers_str);
+}
+
+Variant Pathfinder::get_gv() {
+	//Variant ans = gv;
+	//return ans;
+	return gv;
+}
+
+void Pathfinder::set_tile_pow_max(int _tile_pow_max) {
+	tile_pow_max = _tile_pow_max;
+}
+
+int Pathfinder::get_tile_pow_max() {
+	return tile_pow_max;
+}
+
+void Pathfinder::set_max_depth(int _max_depth) {
+	max_depth = _max_depth;
+}
+
+int Pathfinder::get_max_depth() {
+	return max_depth;
+}
+
+void Pathfinder::set_tile_push_limit(int _tile_push_limit) {
+	tile_push_limit = _tile_push_limit;
+}
+
+int Pathfinder::get_tile_push_limit() {
+	return tile_push_limit;
+}
+
+void Pathfinder::set_is_player(bool _is_player) {
+	is_player = _is_player;
+}
+
+bool Pathfinder::get_is_player() {
+	return is_player;
 }
 
 LevelState::LevelState(Vector2i level_size) {
@@ -686,8 +745,31 @@ Array LevelStateBFS::trace_path() {
 
 void Pathfinder::_bind_methods() {
 	//pathfind(int search_type, Array& level, Vector2i start, Vector2i end, int tile_push_limit, bool is_player, int tile_pow_max)
-	ClassDB::bind_method(D_METHOD("pathfind", "search_type", "level", "start", "end", "tile_push_limit", "is_player", "tile_pow_max"), &Pathfinder::pathfind);
+	ClassDB::bind_method(D_METHOD("pathfind", "search_type", "level", "start", "end"), &Pathfinder::pathfind);
 	ClassDB::bind_method(D_METHOD("testing"), &Pathfinder::testing);
+
+	ClassDB::bind_method(D_METHOD("generate_hash_numbers", "resolution_t"), &Pathfinder::generate_hash_numbers);
+	ClassDB::bind_method(D_METHOD("get_hash_arrays"), &Pathfinder::get_hash_arrays);
+
+	ClassDB::bind_method(D_METHOD("set_gv", "_gv"), &Pathfinder::set_gv);
+	ClassDB::bind_method(D_METHOD("get_gv"), &Pathfinder::get_gv);
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "gv"), "set_gv", "get_gv");
+
+	ClassDB::bind_method(D_METHOD("set_tile_pow_max", "_tile_pow_max"), &Pathfinder::set_tile_pow_max);
+	ClassDB::bind_method(D_METHOD("get_tile_pow_max"), &Pathfinder::get_tile_pow_max);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "tile_pow_max"), "set_tile_pow_max", "get_tile_pow_max");
+
+	ClassDB::bind_method(D_METHOD("set_max_depth", "_max_depth"), &Pathfinder::set_max_depth);
+	ClassDB::bind_method(D_METHOD("get_max_depth"), &Pathfinder::get_max_depth);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_depth"), "set_max_depth", "get_max_depth");
+
+	ClassDB::bind_method(D_METHOD("set_tile_push_limit", "_tile_push_limit"), &Pathfinder::set_tile_push_limit);
+	ClassDB::bind_method(D_METHOD("get_tile_push_limit"), &Pathfinder::get_tile_push_limit);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "tile_push_limit"), "set_tile_push_limit", "get_tile_push_limit");
+
+	ClassDB::bind_method(D_METHOD("set_is_player", "_is_player"), &Pathfinder::set_is_player);
+	ClassDB::bind_method(D_METHOD("get_is_player"), &Pathfinder::get_is_player);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "is_player"), "set_is_player", "get_is_player");
 }
 
 

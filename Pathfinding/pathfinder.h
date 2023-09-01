@@ -3,6 +3,7 @@
 
 #include <godot_cpp/classes/global_constants.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
+#include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/vector2i.hpp>
 #include <godot_cpp/variant/vector3i.hpp>
@@ -47,30 +48,38 @@ enum SearchType {
 
 class Pathfinder : public Node {
 	GDCLASS(Pathfinder, Node);
+
+private:
 	const int CELL_VALUE_COUNT = 131;
 	const int TILE_VALUE_COUNT = 31;
 
-	char* gv_path_cstr = "/root/GV";
-	String gv_path_str = String(gv_path_cstr);
-	NodePath gv_path = NodePath(gv_path_str);
-	Node* gv = get_node<Node>(gv_path);
+	const char* level_hash_numbers_cstr = "level_hash_numbers";
+	const char* x_hash_numbers_cstr = "x_hash_numbers";
+	const char* y_hash_numbers_cstr = "y_hash_numbers";
+	String level_hash_numbers_str = String(level_hash_numbers_cstr);
+	String x_hash_numbers_str = String(x_hash_numbers_cstr);
+	String y_hash_numbers_str = String(y_hash_numbers_cstr);
+	StringName level_hash_numbers_strn = StringName(level_hash_numbers_cstr);
+	StringName x_hash_numbers_strn = StringName(x_hash_numbers_cstr);
+	StringName y_hash_numbers_strn = StringName(y_hash_numbers_cstr);
+	NodePath level_hash_numbers_path = NodePath(level_hash_numbers_str);
+	NodePath x_hash_numbers_path = NodePath(x_hash_numbers_str);
+	NodePath y_hash_numbers_path = NodePath(y_hash_numbers_str);
 
-	char* level_hash_numbers_cstr = "level_hash_numbers";
-	char* x_hash_numbers_cstr = "x_hash_numbers";
-	char* y_hash_numbers_cstr = "y_hash_numbers";
-	StringName level_hash_numbers_str = StringName(level_hash_numbers_cstr);
-	StringName x_hash_numbers_str = StringName(x_hash_numbers_cstr);
-	StringName y_hash_numbers_str = StringName(y_hash_numbers_cstr);
-	Array level_hash_numbers = gv->get(level_hash_numbers_str); //reference
-	Array x_hash_numbers = gv->get(x_hash_numbers_str);
-	Array y_hash_numbers = gv->get(y_hash_numbers_str);
-	
-public:
+	Variant gv;
+	Array level_hash_numbers;
+	Array x_hash_numbers;
+	Array y_hash_numbers;
+
 	int tile_pow_max;
 	int max_depth;
 	int tile_push_limit;
 	bool is_player;
 
+protected:
+	static void _bind_methods();
+	
+public:
 	//Pathfinder(Vector2i resolution_t);
     Array pathfind(int search_type, const Array& level, Vector2i start, Vector2i end);
 	Array pathfind_idastar(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
@@ -84,15 +93,24 @@ public:
 	void try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir);
 	bool is_enclosed(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, bool is_player);
 	int heuristic(Vector2i pos, Vector2i goal);
+	void testing();
 
 	void generate_hash_numbers(Vector2i resolution_t); //inits hash number arrays in GV
+	void get_hash_arrays();
 	size_t z_hash(const std::vector<std::vector<int>>& level, const Vector2i pos);
 	void update_hash_pos(size_t& hash, Vector2i prev, Vector2i next);
 	void update_hash_tile(size_t& hash, Vector2i pos, int tile_val);
-	void testing();
 
-protected:
-	static void _bind_methods();
+	void set_gv(Variant _gv);
+	Variant get_gv();
+	void set_tile_pow_max(int _tile_pow_max);
+	int get_tile_pow_max();
+	void set_max_depth(int _max_depth);
+	int get_max_depth();
+	void set_tile_push_limit(int _tile_push_limit);
+	int get_tile_push_limit();
+	void set_is_player(bool _is_player);
+	bool get_is_player();
 };
 
 struct LevelState {

@@ -2,9 +2,9 @@ env = SConscript('godot-cpp/SConstruct');
 #env.Append(CXXFLAGS=['-stdlib=libstdc++']);
 #env.Append(LINKFLAGS=['-stdlib=libstdc++']);
 
-env.Append(PPPATH="Pathfinding/");
+env.Append(PPPATH="Test/");
 
-src = Glob("Pathfinding/*.cpp");
+src = Glob("Test/*.cpp");
 
 if env['platform'] == 'macos':
 	libpath = 'libtest{}{}'.format( env['suffix'], env['SHLIBSUFFIX'] );

@@ -2,11 +2,12 @@
 #define TEST
 
 #include <godot_cpp/classes/object.hpp>
+#include <godot_cpp/classes/node.hpp>
 
 using namespace godot;
 
-class Test : public Object {
-	GDCLASS(Test, Object);
+class Test : public Node {
+	GDCLASS(Test, Node);
 	
 public:
 	void _ready();
