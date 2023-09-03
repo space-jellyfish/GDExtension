@@ -1,3 +1,7 @@
+/*
+This code is distributed under the Influence Of My Intrusive Thoughts License. Please use it however you wish.
+*/
+
 #ifndef PATHFINDER
 #define PATHFINDER
 
@@ -67,9 +71,9 @@ private:
 	NodePath y_hash_numbers_path = NodePath(y_hash_numbers_str);
 
 	Variant gv;
-	Array level_hash_numbers;
-	Array x_hash_numbers;
-	Array y_hash_numbers;
+	static std::vector<std::vector<std::vector<size_t>>> level_hash_numbers;
+	static std::vector<size_t> x_hash_numbers;
+	static std::vector<size_t> y_hash_numbers;
 
 	int tile_pow_max;
 	int max_depth;
@@ -95,8 +99,8 @@ public:
 	int heuristic(Vector2i pos, Vector2i goal);
 	void testing();
 
-	void generate_hash_numbers(Vector2i resolution_t); //inits hash number arrays in GV
-	void get_hash_arrays();
+	static void generate_hash_numbers(Vector2i resolution_t); //inits hash number arrays
+	//void get_hash_arrays();
 	size_t z_hash(const std::vector<std::vector<int>>& level, const Vector2i pos);
 	void update_hash_pos(size_t& hash, Vector2i prev, Vector2i next);
 	void update_hash_tile(size_t& hash, Vector2i pos, int tile_val);

@@ -17,14 +17,21 @@ http://users.cecs.anu.edu.au/~dharabor/data/papers/harabor-grastien-aaai11.pdf
 #include <unordered_map>
 #include <stack>
 #include <random>
+#include <functional>
 
 using namespace godot;
+
+std::vector<std::vector<std::vector<size_t>>> Pathfinder::level_hash_numbers = {};
+std::vector<size_t> Pathfinder::x_hash_numbers = {};
+std::vector<size_t> Pathfinder::y_hash_numbers = {};
 
 template <typename T> std::vector<T> array_to_vector_1d(const Array& arr);
 template <typename T> std::vector<std::vector<T>> array_to_vector_2d(const Array& arr);
 template <typename T> std::vector<std::vector<std::vector<T>>> array_to_vector_3d(const Array& arr);
 template <typename T> Array vector_to_array_1d(const std::vector<T>& vec);
 template <typename T> Array vector_to_array_2d(const std::vector<std::vector<T>>& vec);
+void print_path(const Array& path);
+void print_pos(const Vector2& pos);
 
 
 //treats ZERO and EMPTY as different level states
@@ -78,6 +85,7 @@ Array Pathfinder::pathfind_idastar(size_t hash, std::vector<std::vector<int>>& l
 
 	//add root level state
 	LevelStateDFS* root = memnew(LevelStateDFS(level_size));
+	//LevelStateDFS* root = new LevelStateDFS(level_size);
 	root->pos = start;
 	root->g = 0;
 	root->h = root_h;
@@ -91,6 +99,7 @@ Array Pathfinder::pathfind_idastar(size_t hash, std::vector<std::vector<int>>& l
 		if (stack.empty()) {
 			//add first level state
 			LevelStateDFS* first = memnew(LevelStateDFS(level_size));
+			//LevelStateDFS* first = new LevelStateDFS(level_size);
 			first->pos = start;
 			first->g = 0;
 			first->h = root_h;
@@ -120,10 +129,12 @@ Array Pathfinder::pathfind_idastar(size_t hash, std::vector<std::vector<int>>& l
 			UtilityFunctions::print("PF FOUND PATH");
 			while (!stack.empty()) {
 				memdelete(stack.top());
+				//delete stack.top();
 				stack.pop();
 			}
 			for (auto& entry : in_path) {
 				memdelete(entry.second);
+				//delete entry.second;
 			}
 			return path;
 		}
@@ -153,8 +164,10 @@ Array Pathfinder::pathfind_idastar(size_t hash, std::vector<std::vector<int>>& l
 					//std::pair<Vector2i, std::vector<std::vector<int>>> key(curr->pos + dir, temp_level);
 
 					LevelStateDFS* temp = memnew(LevelStateDFS(level_size));
+					//LevelStateDFS* temp = new LevelStateDFS(level_size);
 					temp->pos = curr->pos + dir;
 					temp->level = temp_level;
+					//std::cout << "temp level size: " << temp->level.size() << std::endl;
 					temp->hash = temp_hash;
 					if (in_path.find(temp) == in_path.end()) { //find() uses both hasher and equator
 						temp->prev = curr;
@@ -173,6 +186,7 @@ Array Pathfinder::pathfind_idastar(size_t hash, std::vector<std::vector<int>>& l
 					}
 					else {
 						memdelete(temp);
+						//delete temp;
 					}
 				}
 			} //end find neighbors
@@ -204,6 +218,7 @@ Array Pathfinder::pathfind_idastar(size_t hash, std::vector<std::vector<int>>& l
 			}
 			in_path.erase(curr);
 			memdelete(curr);
+			//delete curr;
 
 			//decrement parent child_count
 			if (parent != NULL) {
@@ -228,6 +243,7 @@ Array Pathfinder::pathfind_astar(size_t hash, std::vector<std::vector<int>>& lev
 	
 	//add first level state
 	LevelStateBFS* first = memnew(LevelStateBFS(level_size));
+	//LevelStateBFS* first = new LevelStateBFS(level_size);
 	first->pos = start;
 	first->g = 0;
 	first->h = heuristic(start, end);
@@ -249,6 +265,7 @@ Array Pathfinder::pathfind_astar(size_t hash, std::vector<std::vector<int>>& lev
 			Array ans = curr->trace_path();
 			for (auto& entry : visited) {
 				memdelete(entry.second);
+				//delete entry.second;
 			}
 			return ans;
 		}
@@ -281,12 +298,14 @@ Array Pathfinder::pathfind_astar(size_t hash, std::vector<std::vector<int>>& lev
 				//std::pair<Vector2i, std::vector<std::vector<int>>> key(curr->pos + dir, temp_level);
 
 				LevelStateBFS* temp = memnew(LevelStateBFS(level_size));
+				//LevelStateBFS* temp = new LevelStateBFS(level_size);
 				temp->pos = curr->pos + dir;
 				temp->level = temp_level;
 				temp->hash = temp_hash;
 				auto old_it = visited.find(temp);
 				if (old_it != visited.end()) { //key exists
 					memdelete(temp);
+					//delete temp;
 					temp = old_it->second;
 
 					//if path better, update heuristic and prev
@@ -316,6 +335,7 @@ Array Pathfinder::pathfind_astar(size_t hash, std::vector<std::vector<int>>& lev
 	UtilityFunctions::print("PF NO PATH FOUND");
 	for (auto& entry : visited) {
 		memdelete(entry.second);
+		//delete entry.second;
 	}
 	return Array(); //no path found
 }
@@ -342,19 +362,27 @@ Array Pathfinder::pathfind_merge_stl(size_t hash, std::vector<std::vector<int>>&
 //assume tile_pow_max <= 14
 //returns updated level if action possible, else empty vector
 void Pathfinder::try_action(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector3i action) {
+	//std::cout << "start try action" << std::endl;
+	//std::cout << "ACTION LEVEL SIZE: " << level.size() << std::endl;
 	Vector2i dir = Vector2i(action.x, action.y);
 
 	switch(action.z) {
 		case ActionType::SLIDE:
 			try_slide(hash, level, pos, dir);
+			return;
 		case ActionType::SPLIT:
 			try_split(hash, level, pos, dir);
+			return;
 		default:
 			try_slide(hash, level, pos, dir);
 	}
+	//std::cout << "end try action" << std::endl;
+	//std::cout << "level size: " << level.size() << std::endl;
 }
 
 void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir) {
+	//std::cout << "start try slide"; print_pos(pos);
+	//std::cout << "level size: " << level.size() << std::endl;
 	std::function<bool(Vector2i)> within_bounds;
 	if (dir.x) {
 		if (dir.x > 0) {
@@ -384,6 +412,7 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 
 	int tile_push_count = 0;
 	do {
+		//std::cout << "start bound check" << std::endl;
 		//next_pos, bound check
 		next_pos = curr_pos + dir;
 		if (!within_bounds(next_pos)) {
@@ -400,12 +429,14 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 			level.clear();
 			return; //obstructed by membrane
 		}
+		//std::cout << "start merge check" << std::endl;
 
 		next_tile_val = next_val & 0x1f;
 		int curr_tile_pow = abs(curr_tile_val - StuffId::ZERO);
 		int next_tile_pow = abs(next_tile_val - StuffId::ZERO);
 		bool mergeable_pows = (curr_tile_pow == next_tile_pow && curr_tile_pow != tile_pow_max);
 		if (next_tile_val == StuffId::ZERO || (next_tile_val != StuffId::EMPTY && (mergeable_pows || curr_tile_val == StuffId::ZERO))) { //merge
+			//std::cout << "start merge" << std::endl;
 			//push 0?
 			if (tile_push_count != tile_push_limit && next_tile_val == StuffId::ZERO) { //can push if unobstructed
 				Vector2i temp_pos = next_pos + dir;
@@ -471,6 +502,7 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 			return;
 		}
 		else if ((next_val & 0x1f) == 0) { //slide
+			//std::cout << "start slide" << std::endl;
 			//shift line
 			int temp_val = next_tile_val;
 			while (!tile_vals.empty()) {
@@ -498,10 +530,12 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 
 	//push limit exceeded
 	level.clear();
+	//std::cout << "end try slide" << std::endl;
 }
 
 //assume tile val can split
 void Pathfinder::try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir) {
+	//std::cout << "start try split" << std::endl;
 	Vector2i target = pos + dir;
 	if (target.x < 0 || target.y < 0 || target.x >= level[0].size() || target.y >= level.size()) { //out of bounds
 		level.clear();
@@ -525,6 +559,7 @@ void Pathfinder::try_split(size_t& hash, std::vector<std::vector<int>>& level, V
 	int split_val = tile_val - pow_sign;
 	level[pos.y][pos.x] += split_val;
 	update_hash_tile(hash, pos, tile_val);
+	//std::cout << "end try split" << std::endl;
 }
 
 //simple floodfill using A*
@@ -535,6 +570,7 @@ bool Pathfinder::is_enclosed(std::vector<std::vector<int>>& level, Vector2i star
 	std::vector<std::vector<bool>> visited(level.size(), std::vector<bool>(level[0].size(), false));
 
 	TileState* first = memnew(TileState);
+	//TileState* first = new TileState;
 	first->pos = start;
 	first->h = heuristic(start, end);
 	visited[start.y][start.x] = true;
@@ -560,6 +596,7 @@ bool Pathfinder::is_enclosed(std::vector<std::vector<int>>& level, Vector2i star
 
 			if (!visited[next_pos.y][next_pos.x]) {
 				TileState* next = memnew(TileState);
+				//TileState* next = new TileState;
 				next->pos = next_pos;
 				next->h = heuristic(next_pos, end);
 				visited[next_pos.y][next_pos.x] = true;
@@ -587,93 +624,94 @@ void Pathfinder::testing() {
 //generate array of random numbers used for zobrist hashing
 //to access random number, use [pos.y][pos.x][s_id - StuffId::RED_WALL]
 void Pathfinder::generate_hash_numbers(Vector2i resolution_t) {
-	if (!level_hash_numbers.is_empty()) {
+	static bool generated = false;
+	if (generated) {
 		return;
 	}
+
 	//random size_t generator
 	//std::random_device rd;
 	std::mt19937_64 generator(0); //fixed seed is okay
 	std::uniform_int_distribution<size_t> distribution(std::numeric_limits<size_t>::min(), std::numeric_limits<size_t>::max()); //inclusive?
 
 	//level hash numbers
-	level_hash_numbers.resize(resolution_t.y);
+	level_hash_numbers.reserve(resolution_t.y);
 
 	for (int y=0; y < resolution_t.y; ++y) {
-		//std::vector<std::vector<size_t>> row;
-		Array row = Array();
-		level_hash_numbers[y] = row;
-		row.resize(resolution_t.x);
+		std::vector<std::vector<size_t>> row;
+		row.reserve(resolution_t.x);
 
 		for (int x=0; x < resolution_t.x; ++x) {
-			//std::vector<size_t> stuff;
-			Array stuff = Array();
-			row[x] = stuff;
-			stuff.resize(StuffId::MEMBRANE);
+			std::vector<size_t> stuff;
+			stuff.reserve(StuffId::MEMBRANE);
 
-			stuff[0] = 0; //no tile at cell
+			stuff.push_back(0); //no tile at cell
 			for (int tile_val=1; tile_val < StuffId::MEMBRANE; ++tile_val) {
-				stuff[tile_val] = uint64_t(distribution(generator));
+				stuff.push_back(distribution(generator));
 			}
-			//row.push_back(stuff);
+			row.push_back(stuff);
 		}
-		//level_hash_numbers.push_back(row);
+		level_hash_numbers.push_back(row);
 	}
 
 	//pos hash numbers
-	x_hash_numbers.resize(resolution_t.x);
-	y_hash_numbers.resize(resolution_t.y);
+	x_hash_numbers.reserve(resolution_t.x);
+	y_hash_numbers.reserve(resolution_t.y);
 	for (int x=0; x < resolution_t.x; ++x) {
-		x_hash_numbers[x] = uint64_t(distribution(generator));
+		x_hash_numbers.push_back(distribution(generator));
 	}
 	for (int y=0; y < resolution_t.y; ++y) {
-		y_hash_numbers[y] = uint64_t(distribution(generator));
+		y_hash_numbers.push_back(distribution(generator));
 	}
+
+	generated = true;
+	//std::cout << "hash numbers generated" << std::endl;
 }
 
 size_t Pathfinder::z_hash(const std::vector<std::vector<int>>& level, const Vector2i pos) {
 	size_t hash = 0;
 	for (int y=0; y < level.size(); ++y) {
-		Array row = level_hash_numbers[y];
+		//Array row = level_hash_numbers[y];
 		for (int x=0; x < level[0].size(); ++x) {
-			Array cell = row[x];
+			//Array cell = row[x];
 			int tile_val = level[y][x] & 0x1f;
-			hash ^= uint64_t(cell[tile_val]);
-			//hash ^= level_hash_numbers[y][x][tile_val];
+			//hash ^= uint64_t(cell[tile_val]);
+			hash ^= level_hash_numbers[y][x][tile_val];
 		}
 	}
-	hash ^= uint64_t(x_hash_numbers[pos.x]);
-	hash ^= uint64_t(y_hash_numbers[pos.y]);
-	//hash ^= x_hash_numbers[pos.x];
-	//hash ^= y_hash_numbers[pos.y];
+	//hash ^= uint64_t(x_hash_numbers[pos.x]);
+	//hash ^= uint64_t(y_hash_numbers[pos.y]);
+	hash ^= x_hash_numbers[pos.x];
+	hash ^= y_hash_numbers[pos.y];
 	return hash;
 }
 
 void Pathfinder::update_hash_pos(size_t& hash, Vector2i prev, Vector2i next) {
+	//std::cout << "start update hash pos" << std::endl;
+	//std::cout << "prev: "; print_pos(prev);
+	//std::cout << "next: "; print_pos(next);
 	if (prev.x != next.x) {
-		hash ^= uint64_t(x_hash_numbers[prev.x]);
-		hash ^= uint64_t(x_hash_numbers[next.x]);
-		//hash ^= x_hash_numbers[prev.x];
-		//hash ^= x_hash_numbers[next.x];
+		//hash ^= uint64_t(x_hash_numbers[prev.x]);
+		//hash ^= uint64_t(x_hash_numbers[next.x]);
+		hash ^= x_hash_numbers[prev.x];
+		hash ^= x_hash_numbers[next.x];
 	}
 	if (prev.y != next.y) {
-		hash ^= uint64_t(y_hash_numbers[prev.y]);
-		hash ^= uint64_t(y_hash_numbers[next.y]);
-		//hash ^= y_hash_numbers[prev.y];
-		//hash ^= y_hash_numbers[next.y];
+		//hash ^= uint64_t(y_hash_numbers[prev.y]);
+		//hash ^= uint64_t(y_hash_numbers[next.y]);
+		hash ^= y_hash_numbers[prev.y];
+		hash ^= y_hash_numbers[next.y];
 	}
+	//std::cout << "end update hash pos" << std::endl;
 }
 
 void Pathfinder::update_hash_tile(size_t& hash, Vector2i pos, int tile_val) {
-	//hash ^= level_hash_numbers[pos.y][pos.x][tile_val];
-	Array row = level_hash_numbers[pos.y];
-	Array cell = row[pos.x];
-	hash ^= uint64_t(cell[tile_val]);
-}
-
-void Pathfinder::get_hash_arrays() {
-	level_hash_numbers = gv.get(level_hash_numbers_strn);
-	x_hash_numbers = gv.get(x_hash_numbers_strn);
-	y_hash_numbers = gv.get(y_hash_numbers_strn);
+	//std::cout << "start update hash tile" << std::endl;
+	hash ^= level_hash_numbers[pos.y][pos.x][tile_val];
+	//Array row = level_hash_numbers[pos.y];
+	//Array cell = row[pos.x];
+	//hash ^= uint64_t(cell[tile_val]);
+	//std::cout << "end update hash tile" << std::endl;
 }
 
 void Pathfinder::set_gv(Variant _gv) {
@@ -748,8 +786,8 @@ void Pathfinder::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("pathfind", "search_type", "level", "start", "end"), &Pathfinder::pathfind);
 	ClassDB::bind_method(D_METHOD("testing"), &Pathfinder::testing);
 
-	ClassDB::bind_method(D_METHOD("generate_hash_numbers", "resolution_t"), &Pathfinder::generate_hash_numbers);
-	ClassDB::bind_method(D_METHOD("get_hash_arrays"), &Pathfinder::get_hash_arrays);
+	ClassDB::bind_static_method("Pathfinder", D_METHOD("generate_hash_numbers", "resolution_t"), &Pathfinder::generate_hash_numbers);
+	//ClassDB::bind_method(D_METHOD("get_hash_arrays"), &Pathfinder::get_hash_arrays);
 
 	ClassDB::bind_method(D_METHOD("set_gv", "_gv"), &Pathfinder::set_gv);
 	ClassDB::bind_method(D_METHOD("get_gv"), &Pathfinder::get_gv);
@@ -826,14 +864,35 @@ template <typename T> Array vector_to_array_2d(const std::vector<std::vector<T>>
 	return ans;
 }
 
+void print_path(const Array& path) {
+	for (int i=0; i < path.size(); ++i) {
+		Vector3 action = path[i];
+		std::cout << "(" << action.x << ", " << action.y << ", " << action.z << ")" << std::endl;
+	}
+}
+
+void print_pos(const Vector2& pos) {
+	std::cout << "(" << pos.x << ", " << pos.y << ")" << std::endl;
+}
+
 /*
 //for debugging
 int main(void) {
+	//std::ios_base::sync_with_stdio(false);
+	//std::cerr << "HERE" << std::flush << std::endl;
 	std::vector<std::vector<int>> level_vec = {{17, 0, 0}, {16, 17, 17}};
 	Array level_arr = vector_to_array_2d(level_vec);
 
 	Vector2i start(0, 1);
 	Vector2i end(1, 0);
 	Pathfinder p;
-	p.pathfind(SearchType::PERFECT, level_arr, start, end, 1, true, 12);
+	std::cout << "HA before" << std::flush << std::endl;
+	p.generate_hash_numbers(Vector2i(3, 2));
+	std::cout << "HA Generated" << std::flush << std::endl;
+	p.set_tile_pow_max(12);
+	p.set_tile_push_limit(1);
+	p.set_is_player(true);
+	p.set_max_depth(500);
+	Array path = p.pathfind(SearchType::IDASTAR, level_arr, start, end);
+	print_path(path);
 }*/

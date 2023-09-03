@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "args": [],
+      "stopAtEntry": false,
+      "console": "externalTerminal",
+      "cwd": "c:/Users/space_jellyfish/Desktop/GDExtension",
+      "program": "c:/Users/space_jellyfish/Desktop/GDExtension/build/Debug/outDebug"
+    }
+  ]
+}

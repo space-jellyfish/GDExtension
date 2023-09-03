@@ -1,0 +1,16 @@
+env = SConscript('godot-cpp/SConstruct');
+#env.Append(CXXFLAGS=['-stdlib=libstdc++']);
+#env.Append(LINKFLAGS=['-stdlib=libstdc++']);
+
+env.Append(CPPPATH="Pathfinding/");
+
+#env['CC'] = 'g++'
+#env['CXX'] = 'g++'
+#env.Append(CPPFLAGS=['-g'])  # Use -g for debugging info
+
+src = Glob("Pathfinding/*.cpp");
+
+if env['platform'] == 'windows':
+	libpath = 'libtest{}{}'.format( env['suffix'], env['SHLIBSUFFIX'] );
+	sharedlib = env.SharedLibrary(libpath, src);
+	Default(sharedlib);

@@ -248,8 +248,7 @@ void Pathfinder::set_hash_numbers(const Array& level_nums, const Array& x_nums, 
 //generate array of random numbers used for zobrist hashing
 //to access random number, use [pos.y][pos.x][s_id - StuffId::RED_WALL]
 void Pathfinder::generate_hash_numbers(Vector2i resolution_t) {
-	//static bool generated = false;
-	if (!level_hash_numbers.empty()) {
+	if (!level_hash_numbers.is_empty()) {
 		return;
 	}
 	//random size_t generator
@@ -258,37 +257,40 @@ void Pathfinder::generate_hash_numbers(Vector2i resolution_t) {
 	std::uniform_int_distribution<size_t> distribution(std::numeric_limits<size_t>::min(), std::numeric_limits<size_t>::max()); //inclusive?
 
 	//level hash numbers
-	level_hash_numbers.reserve(resolution_t.y);
+	level_hash_numbers.resize(resolution_t.y);
 
 	for (int y=0; y < resolution_t.y; ++y) {
-		std::vector<std::vector<size_t>> row;
-		row.reserve(resolution_t.x);
+		//std::vector<std::vector<size_t>> row;
+		Array row = Array();
+		level_hash_numbers[y] = row;
+		row.resize(resolution_t.x);
 
 		for (int x=0; x < resolution_t.x; ++x) {
-			std::vector<size_t> stuff;
-			stuff.reserve(StuffId::MEMBRANE);
+			//std::vector<size_t> stuff;
+			Array stuff = Array();
+			row[x] = stuff;
+			stuff.resize(StuffId::MEMBRANE);
 
-			stuff.push_back(0); //no tile at cell
+			stuff[0] = 0; //no tile at cell
 			for (int tile_val=1; tile_val < StuffId::MEMBRANE; ++tile_val) {
-				stuff.push_back(distribution(generator));
+				stuff[tile_val] = uint64_t(distribution(generator));
 			}
-			row.push_back(stuff);
+			//row.push_back(stuff);
 		}
-		level_hash_numbers.push_back(row);
+		//level_hash_numbers.push_back(row);
 	}
 
 	//pos hash numbers
-	x_hash_numbers.reserve(resolution_t.x);
-	y_hash_numbers.reserve(resolution_t.y);
+	x_hash_numbers.resize(resolution_t.x);
+	y_hash_numbers.resize(resolution_t.y);
 	for (int x=0; x < resolution_t.x; ++x) {
-		x_hash_numbers.push_back(distribution(generator));
+		x_hash_numbers[x] = uint64_t(distribution(generator));
 	}
 	for (int y=0; y < resolution_t.y; ++y) {
-		y_hash_numbers.push_back(distribution(generator));
+		y_hash_numbers[y] = uint64_t(distribution(generator));
 	}
-
-	//generated = true;
 }
+
 */
 
 /* void _ready() override;
@@ -349,4 +351,16 @@ private:
 	static std::vector<std::vector<std::vector<size_t>>> level_hash_numbers;
 	static std::vector<size_t> x_hash_numbers;
 	static std::vector<size_t> y_hash_numbers;
+*/
+
+/*
+	Array level_hash_numbers;
+	Array x_hash_numbers;
+	Array y_hash_numbers;
+
+void Pathfinder::get_hash_arrays() {
+	level_hash_numbers = gv.get(level_hash_numbers_strn);
+	x_hash_numbers = gv.get(x_hash_numbers_strn);
+	y_hash_numbers = gv.get(y_hash_numbers_strn);
+}
 */
