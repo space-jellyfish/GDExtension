@@ -1,2 +1,6 @@
 **/.vscode/
 **/build/
+**/SConstruct
+**/SConstruct_main
+**/SConstruct_main_libstd
+**/SConstruct_test
