@@ -42,7 +42,8 @@ enum ActionType {
 };
 
 enum SearchType {
-	IDASTAR = 0,
+	JPASTAR = 0,
+	IDASTAR,
 	ASTAR,
 	STRAIGHT,
 	MERGE_GREEDY,
@@ -86,6 +87,7 @@ protected:
 public:
 	//Pathfinder(Vector2i resolution_t);
     Array pathfind(int search_type, const Array& level, Vector2i start, Vector2i end);
+	Array pathfind_jpastar(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
 	Array pathfind_idastar(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
 	Array pathfind_astar(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
 	Array pathfind_straight(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
@@ -93,9 +95,12 @@ public:
 	Array pathfind_merge_lts(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
 	Array pathfind_merge_stl(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
 	void try_action(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector3i action);
-	void try_slide(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir);
-	void try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir);
+	void try_slide(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, std::function<bool(Vector2i)>& within_bounds);
+	void try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, std::function<bool(Vector2i)>& within_bounds);
+	bool is_splittable(int val);
 	bool is_enclosed(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, bool is_player);
+	std::function<bool(Vector2i)> get_bound_checker(std::vector<std::vector<int>>& level, Vector2i dir);
+	LevelStateBFS* jump(LevelStateBFS* state, Vector2i dir, Vector2i end, std::function<bool(Vector2i)>& within_bounds, bool can_split);
 	int heuristic(Vector2i pos, Vector2i goal);
 	void testing();
 

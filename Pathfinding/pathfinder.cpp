@@ -54,6 +54,8 @@ Array Pathfinder::pathfind(int search_type, const Array& level, Vector2i start, 
 	size_t hash = z_hash(level_vec, start);
 
     switch(search_type) {
+		case SearchType::JPASTAR:
+			return pathfind_jpastar(hash, level_vec, start, end);
 		case SearchType::IDASTAR:
 			return pathfind_idastar(hash, level_vec, start, end);
 		case SearchType::ASTAR:
@@ -67,8 +69,14 @@ Array Pathfinder::pathfind(int search_type, const Array& level, Vector2i start, 
 		case SearchType::MERGE_SMALL_TO_LARGE:
 			return pathfind_merge_stl(hash, level_vec, start, end);
 		default:
-			return pathfind_idastar(hash, level_vec, start, end);
+			return pathfind_jpastar(hash, level_vec, start, end);
 	}
+}
+
+Array Pathfinder::pathfind_jpastar(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end) {
+
+	Vector2i level_size(level[0].size(), level.size());
+
 }
 
 Array Pathfinder::pathfind_idastar(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end) {
@@ -143,7 +151,7 @@ Array Pathfinder::pathfind_idastar(size_t hash, std::vector<std::vector<int>>& l
 		if (curr->g < max_depth) {
 			//find neighbors
 			int curr_val = curr->level[curr->pos.y][curr->pos.x] & 0x1f; //tile value
-			bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::POS_ONE && curr_val != StuffId::ZERO);
+			bool can_split = is_splittable(curr_val);
 			std::vector<LevelStateDFS*> neighbors;
 
 			for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
@@ -277,7 +285,7 @@ Array Pathfinder::pathfind_astar(size_t hash, std::vector<std::vector<int>>& lev
 
 		//add/update neighbors
 		int curr_val = curr->level[curr->pos.y][curr->pos.x] & 0x1f; //tile value
-		bool can_split = (curr_val != StuffId::NEG_ONE && curr_val != StuffId::POS_ONE && curr_val != StuffId::ZERO);
+		bool can_split = is_splittable(curr_val);
 
 		for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
 			if (action_type == ActionType::SPLIT && !can_split) {
@@ -360,46 +368,31 @@ Array Pathfinder::pathfind_merge_stl(size_t hash, std::vector<std::vector<int>>&
 //assume level nonempty
 //assume cell at pos is a tile
 //assume tile_pow_max <= 14
+//won't modify hash if action failed
 //returns updated level if action possible, else empty vector
 void Pathfinder::try_action(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector3i action) {
 	//std::cout << "start try action" << std::endl;
 	//std::cout << "ACTION LEVEL SIZE: " << level.size() << std::endl;
 	Vector2i dir = Vector2i(action.x, action.y);
+	std::function<bool(Vector2i)> within_bounds = get_bound_checker(level, dir);
 
 	switch(action.z) {
 		case ActionType::SLIDE:
-			try_slide(hash, level, pos, dir);
+			try_slide(hash, level, pos, dir, within_bounds);
 			return;
 		case ActionType::SPLIT:
-			try_split(hash, level, pos, dir);
+			try_split(hash, level, pos, dir, within_bounds);
 			return;
 		default:
-			try_slide(hash, level, pos, dir);
+			try_slide(hash, level, pos, dir, within_bounds);
 	}
 	//std::cout << "end try action" << std::endl;
 	//std::cout << "level size: " << level.size() << std::endl;
 }
 
-void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir) {
+void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, std::function<bool(Vector2i)>& within_bounds) {
 	//std::cout << "start try slide"; print_pos(pos);
 	//std::cout << "level size: " << level.size() << std::endl;
-	std::function<bool(Vector2i)> within_bounds;
-	if (dir.x) {
-		if (dir.x > 0) {
-			within_bounds = [&](Vector2i new_pos)->bool { return new_pos.x < level[0].size(); };
-		}
-		else {
-			within_bounds = [&](Vector2i new_pos)->bool { return new_pos.x >= 0; };
-		}
-	}
-	else {
-		if (dir.y > 0) {
-			within_bounds = [&](Vector2i new_pos)->bool { return new_pos.y < level.size(); };
-		}
-		else {
-			within_bounds = [&](Vector2i new_pos)->bool { return new_pos.y >= 0; };
-		}
-	}
 
 	Vector2i curr_pos = pos;
 	int curr_val = level[pos.y][pos.x];
@@ -534,10 +527,10 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 }
 
 //assume tile val can split
-void Pathfinder::try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir) {
+void Pathfinder::try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, std::function<bool(Vector2i)>& within_bounds) {
 	//std::cout << "start try split" << std::endl;
 	Vector2i target = pos + dir;
-	if (target.x < 0 || target.y < 0 || target.x >= level[0].size() || target.y >= level.size()) { //out of bounds
+	if (!within_bounds(target)) {
 		level.clear();
 		return;
 	}
@@ -551,7 +544,7 @@ void Pathfinder::try_split(size_t& hash, std::vector<std::vector<int>>& level, V
 
 	//use try_slide() to handle push logic, then set splitted tile
 	level[pos.y][pos.x] -= pow_sign;
-	try_slide(hash, level, pos, dir);
+	try_slide(hash, level, pos, dir, within_bounds);
 	if (level.empty()) { //slide, and by extension split, not possible
 		return;
 	}
@@ -560,6 +553,10 @@ void Pathfinder::try_split(size_t& hash, std::vector<std::vector<int>>& level, V
 	level[pos.y][pos.x] += split_val;
 	update_hash_tile(hash, pos, tile_val);
 	//std::cout << "end try split" << std::endl;
+}
+
+bool Pathfinder::is_splittable(int val) {
+	return (val != StuffId::NEG_ONE && val != StuffId::POS_ONE && val != StuffId::ZERO);
 }
 
 //simple floodfill using A*
@@ -605,6 +602,51 @@ bool Pathfinder::is_enclosed(std::vector<std::vector<int>>& level, Vector2i star
 		}
 	}
 	return true;
+}
+
+std::function<bool(Vector2i)> Pathfinder::get_bound_checker(std::vector<std::vector<int>>& level, Vector2i dir) {
+	if (dir.x) {
+		if (dir.x > 0) {
+			return [&](Vector2i pos)->bool { return pos.x < level[0].size(); };
+		}
+		else {
+			return [&](Vector2i pos)->bool { return pos.x >= 0; };
+		}
+	}
+	else {
+		if (dir.y > 0) {
+			return [&](Vector2i pos)->bool { return pos.y < level.size(); };
+		}
+		else {
+			return [&](Vector2i pos)->bool { return pos.y >= 0; };
+		}
+	}
+}
+
+LevelStateBFS* Pathfinder::jump(LevelStateBFS* state, Vector2i dir, Vector2i end, std::function<bool(Vector2i)>& within_bounds, bool can_split) { //use dp?
+	Vector2i curr_pos = state->pos;
+	size_t curr_hash = state->hash;
+	std::vector<std::vector<int>> curr_level = state->level;
+	
+	while (within_bounds(curr_pos + dir)) {
+		int next_val = state->level[curr_pos.y][curr_pos.x];
+		if (next_val < 0 || (!is_player && next_val >> 5 == 1)) { //obstructed by wall/membrane
+			return NULL;
+		}
+
+		//step
+		for (int action_type=ActionType::SLIDE; action_type != ActionType::END; ++action_type) {
+			if (action_type == ActionType::SPLIT && !can_split) {
+				continue;
+			}
+			Vector3i action(dir.x, dir.y, action_type);
+			try_action(curr_hash, curr_level, curr_pos, action);
+
+		}
+
+
+
+	}
 }
 
 //use manhattan distance for 4-directional movement
