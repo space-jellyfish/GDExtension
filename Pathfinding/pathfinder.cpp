@@ -659,11 +659,11 @@ void Pathfinder::testing() {
 	int i = first_row[0];
 }
 
-int Pathfinder::back_index(int cell_val) {
+inline int Pathfinder::back_index(int cell_val) {
 	return (cell_val >> 5);
 }
 
-bool Pathfinder::is_wall(int back_index) {
+inline bool Pathfinder::is_wall(int back_index) {
 	return (back_index >= 2 && back_index <= 4);
 }
 

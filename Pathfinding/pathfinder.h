@@ -111,8 +111,8 @@ public:
 	int heuristic(Vector2i pos, Vector2i goal);
 	void testing();
 
-	int back_index(int cell_val);
-	bool is_wall(int back_index);
+	inline int back_index(int cell_val);
+	inline bool is_wall(int back_index);
 
 	static void generate_hash_numbers(Vector2i resolution_t); //inits hash number arrays
 	//void get_hash_arrays();
