@@ -12,12 +12,6 @@ http://users.cecs.anu.edu.au/~dharabor/data/papers/harabor-grastien-aaai11.pdf
 */
 
 #include "pathfinder.h"
-#include <vector>
-#include <queue>
-#include <unordered_map>
-#include <stack>
-#include <random>
-#include <functional>
 
 using namespace godot;
 
@@ -40,8 +34,8 @@ Array Pathfinder::pathfind(int search_type, const Array& level, Vector2i start, 
 
 	//wall/membrane check
 	std::vector<std::vector<int>> level_vec = array_to_vector_2d<int>(level);
-	int end_val = level_vec[end.y][end.x];
-	if (end_val < 0 || (end_val >> 5 == 1 && !is_player)) {
+	int end_back_index = back_index(level_vec[end.y][end.x]);
+	if (is_wall(end_back_index) || (end_back_index == 1 && !is_player)) {
 		return Array();
 	}
 
@@ -401,6 +395,7 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 
 	Vector2i next_pos;
 	int next_val;
+	int next_back_index;
 	int next_tile_val;
 
 	int tile_push_count = 0;
@@ -414,11 +409,12 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 		}
 
 		next_val = level[next_pos.y][next_pos.x];
-		if (next_val < 0) {
+		next_back_index = back_index(next_val);
+		if (is_wall(next_back_index)) {
 			level.clear();
 			return; //obstructed by wall
 		}
-		if ((!is_player || tile_push_count) && next_val >> 5 == 1) {
+		if ((!is_player || tile_push_count) && next_back_index == 1) {
 			level.clear();
 			return; //obstructed by membrane
 		}
@@ -494,7 +490,7 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 			update_hash_pos(hash, pos, pos + dir);
 			return;
 		}
-		else if ((next_val & 0x1f) == 0) { //slide
+		else if (next_tile_val == 0) { //slide
 			//std::cout << "start slide" << std::endl;
 			//shift line
 			int temp_val = next_tile_val;
@@ -586,8 +582,8 @@ bool Pathfinder::is_enclosed(std::vector<std::vector<int>>& level, Vector2i star
 			if (next_pos.x < 0 || next_pos.y < 0 || next_pos.x >= level[0].size() || next_pos.y >= level.size()) { //can't
 				continue;
 			}
-			int next_val = level[next_pos.y][next_pos.x];
-			if (next_val < 0 || (next_val >> 5 == 1 && !is_player)) { //can't
+			int next_back_index = back_index(level[next_pos.y][next_pos.x]);
+			if (is_wall(next_back_index) || (next_back_index == 1 && !is_player)) { //can't
 				continue;
 			}
 
@@ -627,10 +623,10 @@ LevelStateBFS* Pathfinder::jump(LevelStateBFS* state, Vector2i dir, Vector2i end
 	Vector2i curr_pos = state->pos;
 	size_t curr_hash = state->hash;
 	std::vector<std::vector<int>> curr_level = state->level;
-	
+
 	while (within_bounds(curr_pos + dir)) {
-		int next_val = state->level[curr_pos.y][curr_pos.x];
-		if (next_val < 0 || (!is_player && next_val >> 5 == 1)) { //obstructed by wall/membrane
+		int next_back_index = back_index(state->level[curr_pos.y][curr_pos.x]);
+		if (is_wall(next_back_index) || (!is_player && next_back_index == 1)) { //obstructed by wall/membrane
 			return NULL;
 		}
 
@@ -661,6 +657,14 @@ void Pathfinder::testing() {
 	test.push_back(Array());
 	Array first_row = test[0];
 	int i = first_row[0];
+}
+
+int Pathfinder::back_index(int cell_val) {
+	return (cell_val >> 5);
+}
+
+bool Pathfinder::is_wall(int back_index) {
+	return (back_index >= 2 && back_index <= 4);
 }
 
 //generate array of random numbers used for zobrist hashing

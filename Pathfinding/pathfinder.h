@@ -18,20 +18,27 @@ This code is distributed under the Influence Of My Intrusive Thoughts License. P
 #include <godot_cpp/classes/wrapped.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/string_name.hpp>
+#include <vector>
+#include <queue>
+#include <unordered_map>
+#include <stack>
+#include <random>
+#include <functional>
 
 using namespace godot;
 
 enum StuffId {
-	RED_WALL = -3,
-	BLUE_WALL = -2,
-	BLACK_WALL = -1,
+	BORDER = -1,
 	ZERO = 16, //pow offset
 	NEG_ONE = 1,
 	POS_ONE = 31,
 	EMPTY = 0,
 	MEMBRANE = 32,
-	SAVEPOINT = 64,
-	GOAL = 96,
+	BLACK_WALL = 64,
+	BLUE_WALL = 96,
+	RED_WALL = 128,
+	SAVEPOINT = 160,
+	GOAL = 192,
 };
 
 enum ActionType {
@@ -103,6 +110,9 @@ public:
 	LevelStateBFS* jump(LevelStateBFS* state, Vector2i dir, Vector2i end, std::function<bool(Vector2i)>& within_bounds, bool can_split);
 	int heuristic(Vector2i pos, Vector2i goal);
 	void testing();
+
+	int back_index(int cell_val);
+	bool is_wall(int back_index);
 
 	static void generate_hash_numbers(Vector2i resolution_t); //inits hash number arrays
 	//void get_hash_arrays();
