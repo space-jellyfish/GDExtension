@@ -15,10 +15,6 @@ http://users.cecs.anu.edu.au/~dharabor/data/papers/harabor-grastien-aaai11.pdf
 
 using namespace godot;
 
-std::vector<std::vector<std::vector<size_t>>> Pathfinder::level_hash_numbers = {};
-std::vector<size_t> Pathfinder::x_hash_numbers = {};
-std::vector<size_t> Pathfinder::y_hash_numbers = {};
-
 template <typename T> std::vector<T> array_to_vector_1d(const Array& arr);
 template <typename T> std::vector<std::vector<T>> array_to_vector_2d(const Array& arr);
 template <typename T> std::vector<std::vector<std::vector<T>>> array_to_vector_3d(const Array& arr);
@@ -368,107 +364,108 @@ void Pathfinder::try_action(size_t& hash, std::vector<std::vector<int>>& level, 
 	//std::cout << "start try action" << std::endl;
 	//std::cout << "ACTION LEVEL SIZE: " << level.size() << std::endl;
 	Vector2i dir = Vector2i(action.x, action.y);
-	std::function<bool(Vector2i)> within_bounds = get_bound_checker(level, dir);
+	int dist_to_out = get_dist_to_out(level, pos, dir);
 
 	switch(action.z) {
 		case ActionType::SLIDE:
-			try_slide(hash, level, pos, dir, within_bounds);
+			try_slide(hash, level, pos, dir, dist_to_out);
 			return;
 		case ActionType::SPLIT:
-			try_split(hash, level, pos, dir, within_bounds);
+			try_split(hash, level, pos, dir, dist_to_out);
 			return;
 		default:
-			try_slide(hash, level, pos, dir, within_bounds);
+			try_slide(hash, level, pos, dir, dist_to_out);
 	}
 	//std::cout << "end try action" << std::endl;
 	//std::cout << "level size: " << level.size() << std::endl;
 }
 
-void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, std::function<bool(Vector2i)>& within_bounds) {
+void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, int dist_to_out) {
 	//std::cout << "start try slide"; print_pos(pos);
 	//std::cout << "level size: " << level.size() << std::endl;
 
 	Vector2i curr_pos = pos;
-	int curr_val = level[pos.y][pos.x];
-	int curr_tile_val = curr_val & 0x1f;
-	std::vector<int> tile_vals = {curr_tile_val}; //store these bc mod is expensive
+	int curr_cell_id = level[pos.y][pos.x];
+	int curr_tile_id = get_tile_id(curr_cell_id);
+	std::vector<int> tile_ids = {curr_tile_id}; //store these bc mod is expensive
 
 	Vector2i next_pos;
-	int next_val;
-	int next_back_index;
-	int next_tile_val;
+	int next_cell_id;
+	int next_back_id;
+	int next_tile_id;
 
 	int tile_push_count = 0;
 	do {
 		//std::cout << "start bound check" << std::endl;
 		//next_pos, bound check
 		next_pos = curr_pos + dir;
-		if (!within_bounds(next_pos)) {
+		--dist_to_out;
+		if (dist_to_out <= 0) {
 			level.clear();
 			return; //out of bounds
 		}
 
-		next_val = level[next_pos.y][next_pos.x];
-		next_back_index = back_index(next_val);
-		if (is_wall(next_back_index)) {
+		next_cell_id = level[next_pos.y][next_pos.x];
+		next_back_id = back_index(next_cell_id);
+		if (is_wall(next_back_id)) {
 			level.clear();
 			return; //obstructed by wall
 		}
-		if ((!is_player || tile_push_count) && next_back_index == 1) {
+		if ((!is_player || tile_push_count) && next_back_id == CellId::MEMBRANE) {
 			level.clear();
 			return; //obstructed by membrane
 		}
 		//std::cout << "start merge check" << std::endl;
 
 		next_tile_val = next_val & 0x1f;
-		int curr_tile_pow = abs(curr_tile_val - StuffId::ZERO);
-		int next_tile_pow = abs(next_tile_val - StuffId::ZERO);
+		int curr_tile_pow = abs(curr_tile_val - CellId::ZERO) - 1;
+		int next_tile_pow = abs(next_tile_val - CellId::ZERO) - 1;
 		bool mergeable_pows = (curr_tile_pow == next_tile_pow && curr_tile_pow != tile_pow_max);
-		if (next_tile_val == StuffId::ZERO || (next_tile_val != StuffId::EMPTY && (mergeable_pows || curr_tile_val == StuffId::ZERO))) { //merge
+		if (next_tile_val == CellId::ZERO || (next_tile_val != CellId::EMPTY && (mergeable_pows || curr_tile_val == CellId::ZERO))) { //merge
 			//std::cout << "start merge" << std::endl;
 			//push 0?
-			if (tile_push_count != tile_push_limit && next_tile_val == StuffId::ZERO) { //can push if unobstructed
+			if (tile_push_count != tile_push_limit && next_tile_val == CellId::ZERO) { //can push if unobstructed
 				Vector2i temp_pos = next_pos + dir;
 				if (within_bounds(temp_pos)) {
 					int temp_val = level[temp_pos.y][temp_pos.x];
-					if (temp_val == StuffId::EMPTY || temp_val == StuffId::SAVEPOINT || temp_val == StuffId::GOAL) {
-						level[temp_pos.y][temp_pos.x] += StuffId::ZERO;
-						update_hash_tile(hash, temp_pos, StuffId::ZERO);
+					if (temp_val == CellId::EMPTY || temp_val == CellId::SAVEPOINT || temp_val == CellId::GOAL) {
+						level[temp_pos.y][temp_pos.x] += CellId::ZERO;
+						update_hash_tile_id(hash, temp_pos, CellId::ZERO);
 					}
 				} //else 0 gets popped
 			}
 
 			//set id at merge location
-			if (curr_tile_val == StuffId::ZERO) {}
-			else if (next_tile_val == StuffId::ZERO) {
+			if (curr_tile_val == CellId::ZERO) {}
+			else if (next_tile_val == CellId::ZERO) {
 				level[next_pos.y][next_pos.x] += curr_tile_val - next_tile_val;
-				update_hash_tile(hash, next_pos, next_tile_val);
-				update_hash_tile(hash, next_pos, curr_tile_val);
+				update_hash_tile_id(hash, next_pos, next_tile_val);
+				update_hash_tile_id(hash, next_pos, curr_tile_val);
 			}
-			else if (curr_tile_val == StuffId::POS_ONE || curr_tile_val == StuffId::NEG_ONE) { //ones
-				if (curr_tile_val + next_tile_val == StuffId::MEMBRANE) { //opposite sign
-					level[next_pos.y][next_pos.x] += StuffId::ZERO - next_tile_val;
-					update_hash_tile(hash, next_pos, next_tile_val);
-					update_hash_tile(hash, next_pos, StuffId::ZERO);
+			else if (curr_tile_val == CellId::POS_ONE || curr_tile_val == CellId::NEG_ONE) { //ones
+				if (curr_tile_val + next_tile_val == CellId::MEMBRANE) { //opposite sign
+					level[next_pos.y][next_pos.x] += CellId::ZERO - next_tile_val;
+					update_hash_tile_id(hash, next_pos, next_tile_val);
+					update_hash_tile_id(hash, next_pos, CellId::ZERO);
 				}
 				else { //same sign
-					int dval = (curr_tile_val > StuffId::ZERO) ? -14 : 14;
+					int dval = (curr_tile_val > CellId::ZERO) ? -14 : 14;
 					level[next_pos.y][next_pos.x] += dval;
-					update_hash_tile(hash, next_pos, next_tile_val);
-					update_hash_tile(hash, next_pos, next_tile_val + dval);
+					update_hash_tile_id(hash, next_pos, next_tile_val);
+					update_hash_tile_id(hash, next_pos, next_tile_val + dval);
 				}
 			}
 			else {
-				if (curr_tile_pow + next_tile_pow == StuffId::MEMBRANE) { //opposite sign
-					level[next_pos.y][next_pos.x] += StuffId::ZERO - next_tile_val;
-					update_hash_tile(hash, next_pos, next_tile_val);
-					update_hash_tile(hash, next_pos, StuffId::ZERO);
+				if (curr_tile_pow + next_tile_pow == CellId::MEMBRANE) { //opposite sign
+					level[next_pos.y][next_pos.x] += CellId::ZERO - next_tile_val;
+					update_hash_tile_id(hash, next_pos, next_tile_val);
+					update_hash_tile_id(hash, next_pos, CellId::ZERO);
 				}
 				else { //same sign
-					int pow_sign = (curr_tile_val > StuffId::ZERO) ? 1 : -1;
-					level[next_pos.y][next_pos.x] += pow_sign;
-					update_hash_tile(hash, next_pos, next_tile_val);
-					update_hash_tile(hash, next_pos, next_tile_val + pow_sign);
+					int tile_sign = (curr_tile_val >= CellId::ZERO) ? 1 : -1;
+					level[next_pos.y][next_pos.x] += tile_sign;
+					update_hash_tile_id(hash, next_pos, next_tile_val);
+					update_hash_tile_id(hash, next_pos, next_tile_val + tile_sign);
 				}
 			}
 
@@ -477,8 +474,8 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 			tile_vals.pop_back();
 			while (!tile_vals.empty()) {
 				level[curr_pos.y][curr_pos.x] += tile_vals.back() - temp_val;
-				update_hash_tile(hash, curr_pos, temp_val);
-				update_hash_tile(hash, curr_pos, tile_vals.back());
+				update_hash_tile_id(hash, curr_pos, temp_val);
+				update_hash_tile_id(hash, curr_pos, tile_vals.back());
 				temp_val = tile_vals.back();
 				tile_vals.pop_back();
 				curr_pos -= dir;
@@ -486,8 +483,8 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 
 			//curr_pos is now pos
 			level[curr_pos.y][curr_pos.x] -= temp_val;
-			update_hash_tile(hash, curr_pos, temp_val);
-			update_hash_pos(hash, pos, pos + dir);
+			update_hash_tile_id(hash, curr_pos, temp_val);
+			update_hash_tile_type(hash, pos, pos + dir);
 			return;
 		}
 		else if (next_tile_val == 0) { //slide
@@ -496,8 +493,8 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 			int temp_val = next_tile_val;
 			while (!tile_vals.empty()) {
 				level[next_pos.y][next_pos.x] += tile_vals.back() - temp_val;
-				update_hash_tile(hash, next_pos, temp_val);
-				update_hash_tile(hash, next_pos, tile_vals.back());
+				update_hash_tile_id(hash, next_pos, temp_val);
+				update_hash_tile_id(hash, next_pos, tile_vals.back());
 				temp_val = tile_vals.back();
 				tile_vals.pop_back();
 				next_pos -= dir;
@@ -505,8 +502,8 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 
 			//next_pos is now pos
 			level[next_pos.y][next_pos.x] -= temp_val;
-			update_hash_tile(hash, next_pos, temp_val);
-			update_hash_pos(hash, pos, pos + dir);
+			update_hash_tile_id(hash, next_pos, temp_val);
+			update_hash_tile_type(hash, pos, pos + dir);
 			return;
 		}
 
@@ -523,7 +520,7 @@ void Pathfinder::try_slide(size_t& hash, std::vector<std::vector<int>>& level, V
 }
 
 //assume tile val can split
-void Pathfinder::try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, std::function<bool(Vector2i)>& within_bounds) {
+void Pathfinder::try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, int dist_to_out) {
 	//std::cout << "start try split" << std::endl;
 	Vector2i target = pos + dir;
 	if (!within_bounds(target)) {
@@ -531,28 +528,20 @@ void Pathfinder::try_split(size_t& hash, std::vector<std::vector<int>>& level, V
 		return;
 	}
 
-	int tile_val = level[pos.y][pos.x] & 0x1f; //don't care about back layer at pos
-	int pow_sign = (tile_val > StuffId::ZERO) ? 1 : -1;
-	int tile_pow = abs(tile_val - StuffId::ZERO);
-	if (tile_pow == 1) {
-		pow_sign *= -14;
-	}
+	int tile_id = get_tile_id(level[pos.y][pos.x]);
+	auto [tile_pow, tile_sign] = get_pow_and_sign(tile_id);
 
 	//use try_slide() to handle push logic, then set splitted tile
-	level[pos.y][pos.x] -= pow_sign;
-	try_slide(hash, level, pos, dir, within_bounds);
-	if (level.empty()) { //slide, and by extension split, not possible
+	level[pos.y][pos.x] -= tile_sign;
+	try_slide(hash, level, pos, dir, dist_to_out);
+	if (level.empty()) { //slide (and thus split) not possible
 		return;
 	}
 
-	int split_val = tile_val - pow_sign;
-	level[pos.y][pos.x] += split_val;
-	update_hash_tile(hash, pos, tile_val);
+	int split_id = tile_id - tile_sign;
+	level[pos.y][pos.x] += split_id;
+	update_hash_tile_id(hash, pos, tile_id);
 	//std::cout << "end try split" << std::endl;
-}
-
-bool Pathfinder::is_splittable(int val) {
-	return (val != StuffId::NEG_ONE && val != StuffId::POS_ONE && val != StuffId::ZERO);
 }
 
 //simple floodfill using A*
@@ -600,26 +589,7 @@ bool Pathfinder::is_enclosed(std::vector<std::vector<int>>& level, Vector2i star
 	return true;
 }
 
-std::function<bool(Vector2i)> Pathfinder::get_bound_checker(std::vector<std::vector<int>>& level, Vector2i dir) {
-	if (dir.x) {
-		if (dir.x > 0) {
-			return [&](Vector2i pos)->bool { return pos.x < level[0].size(); };
-		}
-		else {
-			return [&](Vector2i pos)->bool { return pos.x >= 0; };
-		}
-	}
-	else {
-		if (dir.y > 0) {
-			return [&](Vector2i pos)->bool { return pos.y < level.size(); };
-		}
-		else {
-			return [&](Vector2i pos)->bool { return pos.y >= 0; };
-		}
-	}
-}
-
-LevelStateBFS* Pathfinder::jump(LevelStateBFS* state, Vector2i dir, Vector2i end, std::function<bool(Vector2i)>& within_bounds, bool can_split) { //use dp?
+LevelStateBFS* Pathfinder::jump(LevelStateBFS* state, Vector2i dir, Vector2i end, bool can_split) { //use dp?
 	Vector2i curr_pos = state->pos;
 	size_t curr_hash = state->hash;
 	std::vector<std::vector<int>> curr_level = state->level;
@@ -659,17 +629,50 @@ void Pathfinder::testing() {
 	int i = first_row[0];
 }
 
-inline int Pathfinder::back_index(int cell_val) {
-	return (cell_val >> 5);
+bool Pathfinder::is_splittable(int tile_id) {
+	return (val != CellId::NEG_ONE && val != CellId::POS_ONE && val != CellId::ZERO);
 }
 
-inline bool Pathfinder::is_wall(int back_index) {
-	return (back_index >= 2 && back_index <= 4);
+bool Pathfinder::is_wall(int back_id) {
+	return back_id == CellId::BLACK_WALL || back_id == CellId::BLUE_WALL || back_id == CellId::RED_WALL;
+}
+
+int Pathfinder::get_tile_id(int cell_id) {
+	return cell_id & 0x1f;
+}
+
+int Pathfinder::get_back_id(int cell_id) {
+	return (cell_id >> 5) << 5;
+}
+
+std::pair<int, int> Pathfinder::get_pow_and_sign(int tile_id) {
+	int pow = abs(tile_val - CellId::ZERO) - 1;
+	int sign = (tile_val >= CellId::ZERO) ? 1 : -1;
+	return std::make_pair(pow, sign);
+}
+
+int Pathfinder::get_dist_to_out(std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir) {
+	if (dir.x) {
+		if (dir.x > 0) {
+			return level[0].size() - pos.x;
+		}
+		else {
+			return pos.x + 1;
+		}
+	}
+	else {
+		if (dir.y > 0) {
+			return level.size() - pos.y;
+		}
+		else {
+			return pos.y + 1;
+		}
+	}
 }
 
 //generate array of random numbers used for zobrist hashing
-//to access random number, use [pos.y][pos.x][s_id - StuffId::RED_WALL]
-void Pathfinder::generate_hash_numbers(Vector2i resolution_t) {
+//to access random number, use [pos.y][pos.x][s_id - CellId::RED_WALL]
+void Pathfinder::generate_hash_keys(Vector2i resolution_t) {
 	static bool generated = false;
 	if (generated) {
 		return;
@@ -680,91 +683,62 @@ void Pathfinder::generate_hash_numbers(Vector2i resolution_t) {
 	std::mt19937_64 generator(0); //fixed seed is okay
 	std::uniform_int_distribution<size_t> distribution(std::numeric_limits<size_t>::min(), std::numeric_limits<size_t>::max()); //inclusive?
 
-	//level hash numbers
-	level_hash_numbers.reserve(resolution_t.y);
-
+	//tile_id hash keys
 	for (int y=0; y < resolution_t.y; ++y) {
-		std::vector<std::vector<size_t>> row;
-		row.reserve(resolution_t.x);
-
 		for (int x=0; x < resolution_t.x; ++x) {
-			std::vector<size_t> stuff;
-			stuff.reserve(StuffId::MEMBRANE);
-
-			stuff.push_back(0); //no tile at cell
-			for (int tile_val=1; tile_val < StuffId::MEMBRANE; ++tile_val) {
-				stuff.push_back(distribution(generator));
+			tile_id_hash_keys[y][x][0] = 0;
+			for (int tile_id=1; tile_id < CellId::MEMBRANE; ++tile_id) {
+				tile_id_hash_keys[y][x][tile_id] = distribution(generator);
 			}
-			row.push_back(stuff);
 		}
-		level_hash_numbers.push_back(row);
 	}
 
-	//pos hash numbers
-	x_hash_numbers.reserve(resolution_t.x);
-	y_hash_numbers.reserve(resolution_t.y);
-	for (int x=0; x < resolution_t.x; ++x) {
-		x_hash_numbers.push_back(distribution(generator));
-	}
-	for (int y=0; y < resolution_t.y; ++y) {
-		y_hash_numbers.push_back(distribution(generator));
+	//tile_type hash keys
+	for (int tile_type = 0; tile_type < TileType::REGULAR; ++tile_type) {
+		for (int y=0; y < resolution_t.y; ++y) {
+			for (int x=0; x < resolution_t.x; ++x) {
+				tile_type_hash_keys[tile_type][y][x] = distribution(generator);
+			}
+		}
 	}
 
 	generated = true;
 	//std::cout << "hash numbers generated" << std::endl;
 }
 
-size_t Pathfinder::z_hash(const std::vector<std::vector<int>>& level, const Vector2i pos) {
+size_t Pathfinder::z_hash(const std::vector<std::vector<int>>& level, const Vector2i player_pos, const std::vector<Vector2i>& hostiles_pos) {
+	assert(level.size() <= MAX_SEARCH_HEIGHT && level[0].size() <= MAX_SEARCH_WIDTH);
+	
 	size_t hash = 0;
 	for (int y=0; y < level.size(); ++y) {
-		//Array row = level_hash_numbers[y];
 		for (int x=0; x < level[0].size(); ++x) {
-			//Array cell = row[x];
-			int tile_val = level[y][x] & 0x1f;
-			//hash ^= uint64_t(cell[tile_val]);
-			hash ^= level_hash_numbers[y][x][tile_val];
+			int tile_id = get_tile_id(level[y][x]);
+			hash ^= tile_id_hash_keys[y][x][tile_id];
 		}
 	}
-	//hash ^= uint64_t(x_hash_numbers[pos.x]);
-	//hash ^= uint64_t(y_hash_numbers[pos.y]);
-	hash ^= x_hash_numbers[pos.x];
-	hash ^= y_hash_numbers[pos.y];
+
+	//player pos
+	hash ^= tile_type_hash_keys[TileType::DARK][player_pos.y][player_pos.x];
+
+	//hostiles' pos
+	for (Vector2i pos : hostiles_pos) {
+		hash ^= tile_type_hash_keys[TileType::HOSTILE][pos.y][pos.x];
+	}
+
 	return hash;
 }
 
-void Pathfinder::update_hash_pos(size_t& hash, Vector2i prev, Vector2i next) {
-	//std::cout << "start update hash pos" << std::endl;
-	//std::cout << "prev: "; print_pos(prev);
-	//std::cout << "next: "; print_pos(next);
-	if (prev.x != next.x) {
-		//hash ^= uint64_t(x_hash_numbers[prev.x]);
-		//hash ^= uint64_t(x_hash_numbers[next.x]);
-		hash ^= x_hash_numbers[prev.x];
-		hash ^= x_hash_numbers[next.x];
-	}
-	if (prev.y != next.y) {
-		//hash ^= uint64_t(y_hash_numbers[prev.y]);
-		//hash ^= uint64_t(y_hash_numbers[next.y]);
-		hash ^= y_hash_numbers[prev.y];
-		hash ^= y_hash_numbers[next.y];
-	}
-	//std::cout << "end update hash pos" << std::endl;
+void Pathfinder::update_hash_tile_type(size_t& hash, int tile_type, Vector2i prev, Vector2i next) {
+	hash ^= tile_type_hash_keys[tile_type][prev.y][prev.x];
+	hash ^= tile_type_hash_keys[tile_type][next.y][next.x];
 }
 
-void Pathfinder::update_hash_tile(size_t& hash, Vector2i pos, int tile_val) {
-	//std::cout << "start update hash tile" << std::endl;
-	hash ^= level_hash_numbers[pos.y][pos.x][tile_val];
-	//Array row = level_hash_numbers[pos.y];
-	//Array cell = row[pos.x];
-	//hash ^= uint64_t(cell[tile_val]);
-	//std::cout << "end update hash tile" << std::endl;
+void Pathfinder::update_hash_tile_id(size_t& hash, Vector2i pos, int tile_id) {
+	hash ^= tile_id_hash_keys[pos.y][pos.x][tile_id];
 }
 
 void Pathfinder::set_gv(Variant _gv) {
 	gv = _gv;
-	//level_hash_numbers = gv->get(level_hash_numbers_str);
-	//x_hash_numbers = gv->get(level_hash_numbers_str);
-	//y_hash_numbers = gv->get(level_hash_numbers_str);
 }
 
 Variant Pathfinder::get_gv() {
@@ -832,7 +806,7 @@ void Pathfinder::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("pathfind", "search_type", "level", "start", "end"), &Pathfinder::pathfind);
 	ClassDB::bind_method(D_METHOD("testing"), &Pathfinder::testing);
 
-	ClassDB::bind_static_method("Pathfinder", D_METHOD("generate_hash_numbers", "resolution_t"), &Pathfinder::generate_hash_numbers);
+	ClassDB::bind_static_method("Pathfinder", D_METHOD("generate_hash_keys", "resolution_t"), &Pathfinder::generate_hash_keys);
 	//ClassDB::bind_method(D_METHOD("get_hash_arrays"), &Pathfinder::get_hash_arrays);
 
 	ClassDB::bind_method(D_METHOD("set_gv", "_gv"), &Pathfinder::set_gv);
@@ -933,7 +907,7 @@ int main(void) {
 	Vector2i end(1, 0);
 	Pathfinder p;
 	std::cout << "HA before" << std::flush << std::endl;
-	p.generate_hash_numbers(Vector2i(3, 2));
+	p.generate_hash_keys(Vector2i(3, 2));
 	std::cout << "HA Generated" << std::flush << std::endl;
 	p.set_tile_pow_max(12);
 	p.set_tile_push_limit(1);

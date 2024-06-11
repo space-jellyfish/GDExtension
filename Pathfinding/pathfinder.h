@@ -1,7 +1,3 @@
-/*
-This code is distributed under the Influence Of My Intrusive Thoughts License. Please use it however you wish.
-*/
-
 #ifndef PATHFINDER
 #define PATHFINDER
 
@@ -24,14 +20,17 @@ This code is distributed under the Influence Of My Intrusive Thoughts License. P
 #include <stack>
 #include <random>
 #include <functional>
+#include <assert>
+
+#define MAX_SEARCH_WIDTH 17
+#define MAX_SEARCH HEIGHT 17
 
 using namespace godot;
 
-enum StuffId {
+
+enum CellId {
 	BORDER = -1,
 	ZERO = 16, //pow offset
-	NEG_ONE = 1,
-	POS_ONE = 31,
 	EMPTY = 0,
 	MEMBRANE = 32,
 	BLACK_WALL = 64,
@@ -40,6 +39,12 @@ enum StuffId {
 	SAVEPOINT = 160,
 	GOAL = 192,
 };
+
+enum TileType {
+	DARK = 0,
+	HOSTILE = 1,
+	REGULAR = 2
+}
 
 enum ActionType {
 	SLIDE = 0,
@@ -62,26 +67,10 @@ class Pathfinder : public Node {
 	GDCLASS(Pathfinder, Node);
 
 private:
-	const int CELL_VALUE_COUNT = 131;
-	const int TILE_VALUE_COUNT = 31;
-
-	const char* level_hash_numbers_cstr = "level_hash_numbers";
-	const char* x_hash_numbers_cstr = "x_hash_numbers";
-	const char* y_hash_numbers_cstr = "y_hash_numbers";
-	String level_hash_numbers_str = String(level_hash_numbers_cstr);
-	String x_hash_numbers_str = String(x_hash_numbers_cstr);
-	String y_hash_numbers_str = String(y_hash_numbers_cstr);
-	StringName level_hash_numbers_strn = StringName(level_hash_numbers_cstr);
-	StringName x_hash_numbers_strn = StringName(x_hash_numbers_cstr);
-	StringName y_hash_numbers_strn = StringName(y_hash_numbers_cstr);
-	NodePath level_hash_numbers_path = NodePath(level_hash_numbers_str);
-	NodePath x_hash_numbers_path = NodePath(x_hash_numbers_str);
-	NodePath y_hash_numbers_path = NodePath(y_hash_numbers_str);
-
 	Variant gv;
-	static std::vector<std::vector<std::vector<size_t>>> level_hash_numbers;
-	static std::vector<size_t> x_hash_numbers;
-	static std::vector<size_t> y_hash_numbers;
+	static std::array<std::array<std::array<size_t, CellId::MEMBRANE>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys; //[y, x, tile_id]
+	static std::array<std::array<std::array<size_t, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT>, TileType::REGULAR> tile_type_hash_keys; //[tile_type, y, x]
+	//different indexing bc cache micro-optimization
 
 	int tile_pow_max;
 	int max_depth;
@@ -102,23 +91,24 @@ public:
 	Array pathfind_merge_lts(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
 	Array pathfind_merge_stl(size_t hash, std::vector<std::vector<int>>& level, Vector2i start, Vector2i end);
 	void try_action(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector3i action);
-	void try_slide(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, std::function<bool(Vector2i)>& within_bounds);
-	void try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, std::function<bool(Vector2i)>& within_bounds);
-	bool is_splittable(int val);
+	void try_slide(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, int dist_to_out);
+	void try_split(size_t& hash, std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir, int dist_to_out);
 	bool is_enclosed(std::vector<std::vector<int>>& level, Vector2i start, Vector2i end, bool is_player);
-	std::function<bool(Vector2i)> get_bound_checker(std::vector<std::vector<int>>& level, Vector2i dir);
-	LevelStateBFS* jump(LevelStateBFS* state, Vector2i dir, Vector2i end, std::function<bool(Vector2i)>& within_bounds, bool can_split);
+	LevelStateBFS* jump(LevelStateBFS* state, Vector2i dir, Vector2i end, bool can_split);
 	int heuristic(Vector2i pos, Vector2i goal);
 	void testing();
 
-	inline int back_index(int cell_val);
-	inline bool is_wall(int back_index);
+	bool is_splittable(int tile_id);
+	bool is_wall(int back_id);
+	int get_tile_id(int cell_id);
+	int get_back_id(int cell_id);
+	std::pair<int, int> get_pow_and_sign(int tile_id);
+	int get_dist_to_out(std::vector<std::vector<int>>& level, Vector2i pos, Vector2i dir);
 
-	static void generate_hash_numbers(Vector2i resolution_t); //inits hash number arrays
-	//void get_hash_arrays();
-	size_t z_hash(const std::vector<std::vector<int>>& level, const Vector2i pos);
+	static void generate_hash_keys(Vector2i resolution_t); //inits hash number arrays
+	size_t z_hash(const std::vector<std::vector<int>>& level, const Vector2i player_pos, const std::vector<Vector2i>& hostiles_pos);
 	void update_hash_pos(size_t& hash, Vector2i prev, Vector2i next);
-	void update_hash_tile(size_t& hash, Vector2i pos, int tile_val);
+	void update_hash_tile(size_t& hash, Vector2i pos, int tile_id);
 
 	void set_gv(Variant _gv);
 	Variant get_gv();
@@ -133,8 +123,11 @@ public:
 };
 
 struct LevelState {
-	Vector2i pos = Vector2i(0, 0);
+	Vector2i pos = Vector2i(0, 0); //query level to get tile type
 	Vector3i prev_action = Vector3i(0, 0, 0);
+
+	//list of positions for each tile type?	
+
 	//heuristics
 	int g = std::numeric_limits<int>::max();
 	int h = std::numeric_limits<int>::max();
