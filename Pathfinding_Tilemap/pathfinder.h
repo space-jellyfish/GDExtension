@@ -103,6 +103,7 @@ struct SANode : public enable_shared_from_this<SANode> {
     size_t hash;
 
     Array trace_path(int path_len);
+    void print_lv();
 
     //these should update hash
     void init_lv_pos(Vector2i pos);

@@ -45,6 +45,20 @@ Array SANode::trace_path(int path_len) {
 	return ans;
 }
 
+void SANode::print_lv() {
+    for (int y=0; y < lv.size(); ++y) {
+        for (int x=0; x < lv[0].size(); ++x) {
+            if (x != lv[0].size() - 1) {
+                printf("%d, ", lv[y][x]);
+            }
+            else {
+                printf("%d", lv[y][x]);
+            }
+        }
+        printf("\n");
+    }
+}
+
 //updates hash
 void SANode::init_lv_pos(Vector2i pos) {
     lv_pos = pos;
@@ -68,7 +82,7 @@ void SANode::init_lv(Vector2i min, Vector2i max)  {
 
             //reduce branching factor
             if (tile_id == TileId::ZERO) {
-                stuff_id -= tile_id;
+                stuff_id -= TileId::ZERO;
             }
             row.push_back(stuff_id);
 
@@ -149,6 +163,7 @@ int SANode::get_slide_push_count(Vector2i dir) {
         }
 
         //push/merge logic
+        //also bubble logic in case it becomes useful
         int temp_tile_id = curr_tile_id;
         curr_tile_id = get_tile_id(curr_stuff_id);
 
@@ -199,8 +214,7 @@ void SANode::perform_slide(Vector2i dir, int push_count) {
 
             //update prev_eff_merged
             prev_eff_merged = false;
-            if (push_count == 0 && get_tile_id(curr_sid) != TileId::EMPTY) {
-                //get_slide_push_count() guarantees prev_tid is nonempty
+            if (push_count == 0) {
                 int prev_pow = tid_to_ps(get_tile_id(prev_sid)).x;
                 int curr_pow = tid_to_ps(get_tile_id(curr_sid)).x;
                 if (prev_pow == curr_pow && prev_pow != -1) {
@@ -228,7 +242,6 @@ shared_ptr<SANode> SANode::try_slide(Vector2i dir) {
     return nullptr;
 }
 
-//assume tile_id at lv_pos is nonempty
 shared_ptr<SANode> SANode::try_split(Vector2i dir) {
     int src_sid = get_lv_sid(lv_pos);
     Vector2i ps = tid_to_ps(get_tile_id(src_sid));
@@ -576,13 +589,16 @@ int get_stuff_id(Vector2i pos) {
 }
 
 int get_tile_id(Vector2i pos) {
+    //TileId::EMPTY is represented by atlas(-1, -1)
     return cells->get_cell_atlas_coords(LayerId::TILE, pos).x + 1;
 }
 
 int get_type_id(Vector2i pos) {
+    //TileId::EMPTY is represented by atlas(-1, -1)
     return max(cells->get_cell_atlas_coords(LayerId::TILE, pos).y, 0);
 }
 
+//assume atlas isn't (-1, -1), cell has been generated
 int get_back_id(Vector2i pos) {
     return cells->get_cell_atlas_coords(LayerId::BACK, pos).x;
 }
@@ -602,7 +618,7 @@ bool is_compatible(int type_id, int back_id) {
 }
 
 bool is_ids_mergeable(int tile_id1, int tile_id2) {
-    if (tile_id1 == TileId::EMPTY || tile_id2 == TileId::EMPTY) {
+    if (tile_id1 == TileId::EMPTY || tile_id2 == TileId::EMPTY || tile_id1 == TileId::ZERO || tile_id2 == TileId::ZERO) {
         return true;
     }
     Vector2i ps1 = tid_to_ps(tile_id1);
@@ -624,9 +640,9 @@ bool is_pow_splittable(int pow) {
     return pow > 0;
 }
 
+//treats TileId::EMPTY as TileId::ZERO
 Vector2i tid_to_ps(int tile_id) {
-    assert(tile_id != TileId::EMPTY);
-    if (tile_id == TileId::ZERO) {
+    if (tile_id == TileId::ZERO || tile_id == TileId::EMPTY) {
         return Vector2i(-1, 1);
     }
     int signed_incremented_pow = tile_id - TileId::ZERO;
@@ -648,6 +664,7 @@ int get_splitted_tid(int tile_id) {
 }
 
 //assumes merge possible
+//return TileId::EMPTY in place of ZERO to reduce branching
 int get_merged_stuff_id(int src_stuff_id, int dest_stuff_id) {
     int back_bits = get_back_bits(dest_stuff_id);
     int src_type_id = get_type_id(src_stuff_id);
@@ -658,25 +675,21 @@ int get_merged_stuff_id(int src_stuff_id, int dest_stuff_id) {
 }
 
 //assumes merge possible
-//doesn't use pow_sign since it cannot represent TileId::EMPTY
+//return TileId::EMPTY in place of ZERO to reduce branching
 int get_merged_tile_id(int tile_id1, int tile_id2) {
-    if (tile_id1 == TileId::EMPTY) {
-        return tile_id2;
+    if (tile_id1 == TileId::EMPTY /*|| tile_id1 == TileId::ZERO*/) {
+        return (tile_id2 == TileId::ZERO) ? TileId::EMPTY : tile_id2;
     }
-    if (tile_id2 == TileId::EMPTY) {
-        return tile_id1;
-    }
-    if (tile_id1 == TileId::ZERO) {
-        return tile_id2;
-    }
-    if (tile_id2 == TileId::ZERO) {
-        return tile_id1;
+    if (tile_id2 == TileId::EMPTY /*|| tile_id2 == TileId::ZERO*/) {
+        return (tile_id1 == TileId::ZERO) ? TileId::EMPTY : tile_id1;
     }
 
     int sgn1 = sgn(tile_id1 - TileId::ZERO);
     if (sgn1 != sgn(tile_id2 - TileId::ZERO)) {
-        return TileId::ZERO;
+        //opposite sign
+        return TileId::EMPTY;
     }
+    //same sign
     return tile_id1 + sgn1;
 }
 
