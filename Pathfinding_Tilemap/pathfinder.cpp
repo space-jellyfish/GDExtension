@@ -677,10 +677,10 @@ int get_merged_stuff_id(int src_stuff_id, int dest_stuff_id) {
 //assumes merge possible
 //return TileId::EMPTY in place of ZERO to reduce branching
 int get_merged_tile_id(int tile_id1, int tile_id2) {
-    if (tile_id1 == TileId::EMPTY /*|| tile_id1 == TileId::ZERO*/) {
+    if (tile_id1 == TileId::EMPTY || tile_id1 == TileId::ZERO) {
         return (tile_id2 == TileId::ZERO) ? TileId::EMPTY : tile_id2;
     }
-    if (tile_id2 == TileId::EMPTY /*|| tile_id2 == TileId::ZERO*/) {
+    if (tile_id2 == TileId::EMPTY || tile_id2 == TileId::ZERO) {
         return (tile_id1 == TileId::ZERO) ? TileId::EMPTY : tile_id1;
     }
 
