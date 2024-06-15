@@ -4,7 +4,7 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/tile_map.hpp>
-#include <godot_cpp/classes/gd_script.hpp>
+//#include <godot_cpp/classes/gd_script.hpp>
 #include <unordered_map>
 #include <unordered_set>
 #include <queue>
@@ -15,6 +15,7 @@ using namespace godot;
 //each cell is represented as | BackId (8) | TypeId (3) | TileId (5) |
 //Vector2i max is exclusive
 //sign in pow_sign must be +-1
+
 enum TileId {
     EMPTY = 0,
     ZERO = 16,
@@ -55,6 +56,7 @@ enum ColorId {
 
 enum SearchId {
 	DIJKSTRA = 0,
+    JPD, //jump point dijkstra
 	ASTAR,
 	IDASTAR,
 };
@@ -89,17 +91,33 @@ struct Vector2iHasher {
     }
 };
 
-struct SANode : public enable_shared_from_this<SANode> {
-    friend class Pathfinder;
 
+struct SANode : public enable_shared_from_this<SANode> {
     Vector2i lv_pos;
     vector<vector<int>> lv;
     Vector3i prev_action = Vector3i(0, 0, 0);
     shared_ptr<SANode> prev = nullptr;
+    bool prev_eff_pushed = true; //to prevent backtracking
+    bool prev_eff_merged = false; //to prevent backtracking
     int g=0, h=0, f=0; //use f for dijkstra
     size_t hash;
 
-    Array trace_path();
+    Array trace_path(int path_len);
+
+    //these should update hash
+    void init_lv_pos(Vector2i pos);
+    void init_lv(Vector2i min, Vector2i max);
+    void set_lv_sid(Vector2i pos, int new_sid);
+    void set_lv_pos(Vector2i pos);
+
+    int get_lv_sid(Vector2i pos);
+    int get_dist_to_lv_edge(Vector2i dir);
+    int get_slide_push_count(Vector2i dir);
+    void perform_slide(Vector2i dir, int push_count);
+    
+    shared_ptr<SANode> try_slide(Vector2i dir);
+    shared_ptr<SANode> try_split(Vector2i dir);
+    shared_ptr<SANode> try_action(Vector3i action);
 };
 
 struct SANodeHashGetter  {
@@ -110,7 +128,8 @@ struct SANodeHashGetter  {
 
 struct SANodeEquator {
 	bool operator() (const shared_ptr<SANode> first, const shared_ptr<SANode> second) const {
-		return (first->lv_pos == second->lv_pos && first->lv == second->lv);
+		//return (first->lv_pos == second->lv_pos && first->lv == second->lv);
+        return first->hash == second->hash;
 	}
 };
 
@@ -130,6 +149,44 @@ struct SANodeComparer {
 typedef priority_queue<AbstractNode, vector<AbstractNode>, AbstractNodeComparer> pq;
 typedef unordered_map<Vector2i, int, Vector2iHasher> um;
 
+class Pathfinder : public Node {
+    friend struct SANode;
+    GDCLASS(Pathfinder, Node);
+
+private:
+    Vector2i player_pos;
+    Vector2i player_last_dir;
+    //GDScript* GV;
+    unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> abstract_dists; //goal_pos, [open, closed]; assume all entries are actively used
+
+protected:
+    static void _bind_methods();
+
+public:
+    Array pathfind(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_jpd(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_astar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_idastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_rrdastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_ididjpastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+
+    void set_player_pos(Vector2i pos);
+    void set_player_last_dir(Vector2i dir);
+    void set_tilemap(TileMap* t);
+    void set_tile_push_limit(int tpl);
+    void generate_hash_keys();
+
+    bool is_tile(Vector2i pos);
+    bool is_immediately_trapped(Vector2i pos);
+
+    void rrd_init(int agent_type_id, Vector2i goal_pos);
+    bool rrd_resume(int agent_type_id, Vector2i goal_pos, Vector2i node_pos);
+    int get_move_abs_dist(int src_tile_id, int dest_tile_id);
+    int get_sep_abs_dist(int tile_id1, int tile_id2);
+    int get_abs_dist(int agent_type_id, Vector2i goal_pos, Vector2i node_pos);
+};
+
 const unordered_set<int> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
 const unordered_set<int> B_SAVE_OR_GOAL = {BackId::SAVEPOINT, BackId::GOAL};
 const unordered_set<int> T_ENEMY = {TypeId::INVINCIBLE, TypeId::HOSTILE, TypeId::VOID};
@@ -147,82 +204,38 @@ const int TILE_ID_MASK = TILE_ID_COUNT - 1;
 const int TYPE_ID_MASK = ((1 << TYPE_ID_BITLEN) - 1) << TILE_ID_BITLEN;
 const int BACK_ID_MASK = ((1 << BACK_ID_BITLEN) - 1) << (TILE_ID_BITLEN + TYPE_ID_BITLEN);
 
-
-class Pathfinder : public Node {
-    GDCLASS(Pathfinder, Node);
-
-private:
-    array<array<array<size_t, MAX_SEARCH_HEIGHT>, MAX_SEARCH_WIDTH>, TILE_ID_COUNT - 1> tile_id_hash_keys;
-    array<array<array<size_t, MAX_SEARCH_HEIGHT>, MAX_SEARCH_WIDTH>, TypeId::REGULAR> type_id_hash_keys;
-    array<array<size_t, MAX_SEARCH_HEIGHT>, MAX_SEARCH_WIDTH> agent_pos_hash_keys;
-
-    Vector2i player_pos;
-    Vector2i player_last_dir;
-    int tile_push_limit;
-    TileMap* cells;
-    GDScript* GV;
-    unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> abstract_dists; //goal_pos, [open, closed]; assume all entries are actively used
-
-protected:
-    static void _bind_methods();
-
-public:
-    Pathfinder();
-    ~Pathfinder();
-    Array pathfind(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_astar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_idastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_rrdastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_ididjpastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-
-    shared_ptr<SANode> try_action(shared_ptr<SANode> n, Vector3i action);
-    shared_ptr<SANode> try_slide(shared_ptr<SANode> n, Vector2i dir);
-    shared_ptr<SANode> try_split(shared_ptr<SANode> n, Vector2i dir);
-    int get_dist_to_lv_edge(shared_ptr<SANode> n, Vector2i dir);
-    int get_slide_push_count(shared_ptr<SANode> n, Vector2i dir);
-    shared_ptr<SANode> perform_slide(shared_ptr<SANode> n, Vector2i dir, int push_count);
-
-    void _ready() override;
-    void set_player_pos(Vector2i pos);
-    void set_player_last_dir(Vector2i dir);
-    void set_tilemap(TileMap* t);
-    void set_tile_push_limit(int tpl);
-
-    void init_sanode_lv(shared_ptr<SANode> n, Vector2i min, Vector2i max);
-    void generate_hash_keys();
-    size_t get_z_hash(Vector2i min, Vector2i max, Vector2i start);
-
-    bool is_immediately_trapped(Vector2i pos);
-    int get_stuff_id(Vector2i pos);
-    int get_tile_id(Vector2i pos);
-    int get_type_id(Vector2i pos);
-    int get_back_id(Vector2i pos);
-    int get_stuff_id(shared_ptr<SANode> n, Vector2i lv_pos);
-    int get_tile_id(shared_ptr<SANode> n, Vector2i lv_pos);
-    int get_type_id(shared_ptr<SANode> n, Vector2i lv_pos);
-    int get_back_id(shared_ptr<SANode> n, Vector2i lv_pos);
-    bool is_tile(Vector2i pos);
-    bool is_compatible(int type_id, int back_id);
-    bool is_ids_mergeable(int tile_id1, int tile_id2);
-    bool is_pow_signs_mergeable(Vector2i ps1, Vector2i ps2);
-    Vector2i tid_to_ps(int tile_id);
-    int ps_to_tid(Vector2i ps);
-
-    //these assume merge is possible
-    int get_merged_stuff_id(int src_stuff_id, int dest_stuff_id);
-    int get_merged_tile_id(int tile_id1, int tile_id2);
-    Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2);
-
-    void rrd_init(int agent_type_id, Vector2i goal_pos);
-    bool rrd_resume(int agent_type_id, Vector2i goal_pos, Vector2i node_pos);
-    int get_move_abs_dist(int src_tile_id, int dest_tile_id);
-    int get_sep_abs_dist(int tile_id1, int tile_id2);
-    int get_abs_dist(int agent_type_id, Vector2i goal_pos, Vector2i node_pos);
-};
+extern array<array<array<size_t, TILE_ID_COUNT - 1>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys;
+extern array<array<array<size_t, TypeId::REGULAR>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> type_id_hash_keys;
+extern array<array<size_t, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> agent_pos_hash_keys;
+extern TileMap* cells;
+extern int tile_push_limit;
 
 template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
 }
+
+int get_type_bits(int stuff_id);
+int get_back_bits(int stuff_id);
+int get_tile_id(int stuff_id);
+int get_type_id(int stuff_id);
+int get_back_id(int stuff_id);
+int get_stuff_id(Vector2i pos);
+int get_tile_id(Vector2i pos);
+int get_type_id(Vector2i pos);
+int get_back_id(Vector2i pos);
+bool is_compatible(int type_id, int back_id);
+bool is_ids_mergeable(int tile_id1, int tile_id2);
+bool is_pow_signs_mergeable(Vector2i ps1, Vector2i ps2);
+bool is_pow_splittable(int pow);
+Vector2i tid_to_ps(int tile_id);
+int ps_to_tid(Vector2i ps);
+Vector2i get_splitted_ps(Vector2i ps);
+int get_splitted_tid(int tile_id);
+
+//these assume merge is possible
+int get_merged_stuff_id(int src_stuff_id, int dest_stuff_id);
+int get_merged_tile_id(int tile_id1, int tile_id2);
+Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2);
+
 
 #endif

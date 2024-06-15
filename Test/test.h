@@ -15,5 +15,6 @@ public:
 protected:
 	static void _bind_methods() {};
 };
+Test* t;
 
 #endif
