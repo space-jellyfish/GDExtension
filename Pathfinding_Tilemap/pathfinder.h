@@ -56,7 +56,7 @@ enum ColorId {
 
 enum SearchId {
 	DIJKSTRA = 0,
-    JPD, //jump point dijkstra
+    JPD, //jump point dijkstra, horizontally biased
 	ASTAR,
 	IDASTAR,
 };
@@ -95,7 +95,7 @@ struct Vector2iHasher {
 struct SANode : public enable_shared_from_this<SANode> {
     Vector2i lv_pos;
     vector<vector<int>> lv;
-    Vector3i prev_action = Vector3i(0, 0, 0);
+    Vector3i prev_action;
     shared_ptr<SANode> prev = nullptr;
     bool prev_eff_pushed = true; //to prevent backtracking
     bool prev_eff_merged = false; //to prevent backtracking
@@ -119,6 +119,8 @@ struct SANode : public enable_shared_from_this<SANode> {
     shared_ptr<SANode> try_slide(Vector2i dir);
     shared_ptr<SANode> try_split(Vector2i dir);
     shared_ptr<SANode> try_action(Vector3i action);
+
+    shared_ptr<SANode> jump(shared_ptr<SANode> x, Vector2i dir, Vector2i end);
 };
 
 struct SANodeHashGetter  {
@@ -191,7 +193,9 @@ public:
 const unordered_set<int> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
 const unordered_set<int> B_SAVE_OR_GOAL = {BackId::SAVEPOINT, BackId::GOAL};
 const unordered_set<int> T_ENEMY = {TypeId::INVINCIBLE, TypeId::HOSTILE, TypeId::VOID};
-const vector<Vector2i> DIRECTIONS = {Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)};
+const unordered_set<Vector2i> DIRECTIONS = {Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)};
+const unordered_set<Vector2i> H_DIRS = {Vector2i(1, 0), Vector2i(-1, 0)};
+const unordered_set<Vector2i> V_DIRS = {Vector2i(0, 1), Vector2i(0, -1)};
 const unordered_map<int, int> MERGE_PRIORITIES = {{TypeId::PLAYER, 1}, {TypeId::INVINCIBLE, 3}, {TypeId::HOSTILE, 2}, {TypeId::VOID, 4}, {TypeId::REGULAR, 0}};
 const int TILE_POW_MAX = 14;
 const int ABSTRACT_DIST_SIGN_CHANGE_PENALTY_FACTOR = 2;
@@ -215,6 +219,7 @@ template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
 }
 
+int get_stuff_id(int back_id, int type_id, int tile_id);
 int get_type_bits(int stuff_id);
 int get_back_bits(int stuff_id);
 int get_tile_id(int stuff_id);
@@ -226,8 +231,10 @@ int get_type_id(Vector2i pos);
 int get_back_id(Vector2i pos);
 bool is_compatible(int type_id, int back_id);
 bool is_ids_mergeable(int tile_id1, int tile_id2);
+bool is_zero_or_empty(int tile_id);
 bool is_pow_signs_mergeable(Vector2i ps1, Vector2i ps2);
 bool is_pow_splittable(int pow);
+bool is_eff_merge(int tile_id1, int tile_id2);
 Vector2i tid_to_ps(int tile_id);
 int ps_to_tid(Vector2i ps);
 Vector2i get_splitted_ps(Vector2i ps);
