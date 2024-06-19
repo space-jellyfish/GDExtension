@@ -15,6 +15,8 @@ using namespace godot;
 //each cell is represented as | BackId (8) | TypeId (3) | TileId (5) |
 //Vector2i max is exclusive
 //sign in pow_sign must be +-1
+//treat EMPTY and ZERO as distinct nodes unless TRACK_ZEROS is false
+//SA search allows killing other types as long as agent_type is preserved
 
 enum TileId {
     EMPTY = 0,
@@ -56,7 +58,7 @@ enum ColorId {
 
 enum SearchId {
 	DIJKSTRA = 0,
-    JPD, //jump point dijkstra, horizontally biased
+    HBJPD, //horizontally biased jump point dijkstra
 	ASTAR,
 	IDASTAR,
 };
@@ -95,10 +97,11 @@ struct Vector2iHasher {
 struct SANode : public enable_shared_from_this<SANode> {
     Vector2i lv_pos;
     vector<vector<int>> lv;
-    Vector3i prev_action;
+    //Vector3i prev_action;
+    vector<Vector3i> prev_actions = {Vector3i(0, 0, 0)};
     shared_ptr<SANode> prev = nullptr;
-    bool prev_eff_pushed = true; //to prevent backtracking
-    bool prev_eff_merged = false; //to prevent backtracking
+    bool prev_merged_empty = false; //to prevent backtracking
+    bool prev_merged_ssr = false; //to prevent backtracking; ssr means same sign regular
     int g=0, h=0, f=0; //use f for dijkstra
     size_t hash;
 
@@ -110,17 +113,19 @@ struct SANode : public enable_shared_from_this<SANode> {
     void init_lv(Vector2i min, Vector2i max);
     void set_lv_sid(Vector2i pos, int new_sid);
     void set_lv_pos(Vector2i pos);
+    void clear_lv_sid(Vector2i pos);
 
     int get_lv_sid(Vector2i pos);
     int get_dist_to_lv_edge(Vector2i dir);
-    int get_slide_push_count(Vector2i dir);
+    int get_slide_push_count(Vector2i dir, bool allow_type_change);
     void perform_slide(Vector2i dir, int push_count);
     
-    shared_ptr<SANode> try_slide(Vector2i dir);
-    shared_ptr<SANode> try_split(Vector2i dir);
-    shared_ptr<SANode> try_action(Vector3i action);
+    shared_ptr<SANode> try_slide(Vector2i dir, bool allow_type_change);
+    shared_ptr<SANode> try_split(Vector2i dir, bool allow_type_change);
+    shared_ptr<SANode> try_action(Vector3i action, bool allow_type_change);
 
-    shared_ptr<SANode> jump(shared_ptr<SANode> x, Vector2i dir, Vector2i end);
+    shared_ptr<SANode> jump(Vector2i dir, Vector2i lv_end);
+    shared_ptr<SANode> get_jump_point(Vector2i dir, Vector2i jp_pos, int jump_dist, int zero_count);
 };
 
 struct SANodeHashGetter  {
@@ -168,7 +173,7 @@ protected:
 public:
     Array pathfind(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_jpd(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_astar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_idastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_rrdastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
@@ -198,7 +203,7 @@ const unordered_set<Vector2i> H_DIRS = {Vector2i(1, 0), Vector2i(-1, 0)};
 const unordered_set<Vector2i> V_DIRS = {Vector2i(0, 1), Vector2i(0, -1)};
 const unordered_map<int, int> MERGE_PRIORITIES = {{TypeId::PLAYER, 1}, {TypeId::INVINCIBLE, 3}, {TypeId::HOSTILE, 2}, {TypeId::VOID, 4}, {TypeId::REGULAR, 0}};
 const int TILE_POW_MAX = 14;
-const int ABSTRACT_DIST_SIGN_CHANGE_PENALTY_FACTOR = 2;
+const int ABSTRACT_DIST_SIGN_CHANGE_PENALTY = 2;
 const int MAX_SEARCH_WIDTH = 17;
 const int MAX_SEARCH_HEIGHT = 17;
 const int TILE_ID_BITLEN = 5;
@@ -208,6 +213,7 @@ const int TILE_ID_COUNT = 1 << TILE_ID_BITLEN;
 const int TILE_ID_MASK = TILE_ID_COUNT - 1;
 const int TYPE_ID_MASK = ((1 << TYPE_ID_BITLEN) - 1) << TILE_ID_BITLEN;
 const int BACK_ID_MASK = ((1 << BACK_ID_BITLEN) - 1) << (TILE_ID_BITLEN + TYPE_ID_BITLEN);
+const bool TRACK_ZEROS = false;
 
 extern array<array<array<size_t, TILE_ID_COUNT - 1>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys;
 extern array<array<array<size_t, TypeId::REGULAR>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> type_id_hash_keys;
@@ -231,17 +237,27 @@ int get_type_id(Vector2i pos);
 int get_back_id(Vector2i pos);
 bool is_compatible(int type_id, int back_id);
 bool is_ids_mergeable(int tile_id1, int tile_id2);
-bool is_zero_or_empty(int tile_id);
+bool is_same_sign_merge(int tile_id1, int tile_id2);
+bool is_tile_unsigned(int tile_id);
+bool is_tile_unsigned_and_regular(int stuff_id);
+bool is_tile_empty_and_regular(int stuff_id);
 bool is_pow_signs_mergeable(Vector2i ps1, Vector2i ps2);
 bool is_pow_splittable(int pow);
 bool is_eff_merge(int tile_id1, int tile_id2);
+bool is_type_preserved(int src_type_id, int dest_type_id);
+bool is_type_dominant(int src_type_id, int dest_type_id);
 Vector2i tid_to_ps(int tile_id);
 int ps_to_tid(Vector2i ps);
+int get_tile_pow(int tile_id);
+int get_tile_sign(int tile_id);
+int get_true_tile_sign(int tile_id);
+int get_opposite_tile_id(int tile_id);
 Vector2i get_splitted_ps(Vector2i ps);
 int get_splitted_tid(int tile_id);
 
 //these assume merge is possible
 int get_merged_stuff_id(int src_stuff_id, int dest_stuff_id);
+int get_moved_stuff_id(int src_stuff_id, int dest_stuff_id);
 int get_merged_tile_id(int tile_id1, int tile_id2);
 Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2);
 

@@ -53,3 +53,14 @@ Pathfinder::~Pathfinder() {
 
 }
 */
+
+/* wrong and hasty conclusions not backed by casework
+                //if -dir and slide and prev effective push count is 0, skip
+                //if -dir and split and prev was effective merge, skip
+*/
+
+/* in perform_slide(), slightly faster but less comprehensible way of getting prev_merged_ssr
+    prev_merged_ssr = !is_tile_unsigned(src_tile_id) && push_count == 0 && src_tile_id == neighbor_tile_id && neighbor_type_id == TypeId::REGULAR;
+    //TILE_POW_MAX check is unnecessary bc push_count == 0
+    //!is_tile_unsigned(src_tile_id) is technically required but logically unnecessary bc zero cannot split anyways
+*/
