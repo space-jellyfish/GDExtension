@@ -15,8 +15,14 @@ using namespace godot;
 //each cell is represented as | BackId (8) | TypeId (3) | TileId (5) |
 //Vector2i max is exclusive
 //sign in pow_sign must be +-1
-//treat EMPTY and ZERO as distinct nodes unless TRACK_ZEROS is false
-//SA search allows killing other types as long as agent_type is preserved
+
+//treat EMPTY and ZERO as distinct nodes; there are no zeros unless TRACK_ZEROS is true
+//use TRACK_ZEROS if zeros are relevant to gameplay logic
+
+//killable type is type with merge priority <= that of agent type
+//treat killing other type as distinct node; there are no killable types unless TRACK_KILLABLE_TYPES is true
+//for SA search, don't use TRACK_KILLABLE_TYPES
+//if hostile merges with killable type into 0, killable type is killed, then hostile dies, resulting in regular 0 
 
 enum TileId {
     EMPTY = 0,
@@ -87,8 +93,8 @@ struct AbstractNodeComparer {
 
 struct Vector2iHasher {
     size_t operator() (const Vector2i v) const {
-        size_t hash_x = hash<int>{}(v.x);
-        size_t hash_y = hash<int>{}(v.y);
+        size_t hash_x = hash<int32_t>{}(v.x);
+        size_t hash_y = hash<int32_t>{}(v.y);
         return hash_x ^ (hash_y + 0x9e3779b9 + (hash_x << 6) + (hash_x >> 2));
     }
 };
@@ -96,12 +102,13 @@ struct Vector2iHasher {
 
 struct SANode : public enable_shared_from_this<SANode> {
     Vector2i lv_pos;
-    vector<vector<int>> lv;
+    vector<vector<uint16_t>> lv;
     //Vector3i prev_action;
     vector<Vector3i> prev_actions = {Vector3i(0, 0, 0)};
     shared_ptr<SANode> prev = nullptr;
     bool prev_merged_empty = false; //to prevent backtracking
     bool prev_merged_ssr = false; //to prevent backtracking; ssr means same sign regular
+    unordered_map<Vector2i, shared_ptr<SANode>> jump_points; //dir, jp; to store extra results from jump()
     int g=0, h=0, f=0; //use f for dijkstra
     size_t hash;
 
@@ -110,12 +117,12 @@ struct SANode : public enable_shared_from_this<SANode> {
 
     //these should update hash
     void init_lv_pos(Vector2i pos);
-    void init_lv(Vector2i min, Vector2i max);
-    void set_lv_sid(Vector2i pos, int new_sid);
+    void init_lv(Vector2i min, Vector2i max, Vector2i agent_pos);
+    void set_lv_sid(Vector2i pos, uint16_t new_sid);
     void set_lv_pos(Vector2i pos);
     void clear_lv_sid(Vector2i pos);
 
-    int get_lv_sid(Vector2i pos);
+    uint16_t get_lv_sid(Vector2i pos);
     int get_dist_to_lv_edge(Vector2i dir);
     int get_slide_push_count(Vector2i dir, bool allow_type_change);
     void perform_slide(Vector2i dir, int push_count);
@@ -124,7 +131,7 @@ struct SANode : public enable_shared_from_this<SANode> {
     shared_ptr<SANode> try_split(Vector2i dir, bool allow_type_change);
     shared_ptr<SANode> try_action(Vector3i action, bool allow_type_change);
 
-    shared_ptr<SANode> jump(Vector2i dir, Vector2i lv_end);
+    shared_ptr<SANode> jump(Vector2i dir, Vector2i lv_end, bool allow_type_change);
     shared_ptr<SANode> get_jump_point(Vector2i dir, Vector2i jp_pos, int jump_dist, int zero_count);
 };
 
@@ -188,20 +195,20 @@ public:
     bool is_tile(Vector2i pos);
     bool is_immediately_trapped(Vector2i pos);
 
-    void rrd_init(int agent_type_id, Vector2i goal_pos);
-    bool rrd_resume(int agent_type_id, Vector2i goal_pos, Vector2i node_pos);
-    int get_move_abs_dist(int src_tile_id, int dest_tile_id);
-    int get_sep_abs_dist(int tile_id1, int tile_id2);
-    int get_abs_dist(int agent_type_id, Vector2i goal_pos, Vector2i node_pos);
+    void rrd_init(uint8_t agent_type_id, Vector2i goal_pos);
+    bool rrd_resume(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos);
+    int get_move_abs_dist(uint8_t src_tile_id, uint8_t dest_tile_id);
+    int get_sep_abs_dist(uint8_t tile_id1, uint8_t tile_id2);
+    int get_abs_dist(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos);
 };
 
-const unordered_set<int> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
-const unordered_set<int> B_SAVE_OR_GOAL = {BackId::SAVEPOINT, BackId::GOAL};
-const unordered_set<int> T_ENEMY = {TypeId::INVINCIBLE, TypeId::HOSTILE, TypeId::VOID};
+const unordered_set<uint8_t> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
+const unordered_set<uint8_t> B_SAVE_OR_GOAL = {BackId::SAVEPOINT, BackId::GOAL};
+const unordered_set<uint8_t> T_ENEMY = {TypeId::INVINCIBLE, TypeId::HOSTILE, TypeId::VOID};
 const unordered_set<Vector2i> DIRECTIONS = {Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)};
 const unordered_set<Vector2i> H_DIRS = {Vector2i(1, 0), Vector2i(-1, 0)};
 const unordered_set<Vector2i> V_DIRS = {Vector2i(0, 1), Vector2i(0, -1)};
-const unordered_map<int, int> MERGE_PRIORITIES = {{TypeId::PLAYER, 1}, {TypeId::INVINCIBLE, 3}, {TypeId::HOSTILE, 2}, {TypeId::VOID, 4}, {TypeId::REGULAR, 0}};
+const unordered_map<uint8_t, int> MERGE_PRIORITIES = {{TypeId::PLAYER, 1}, {TypeId::INVINCIBLE, 3}, {TypeId::HOSTILE, 2}, {TypeId::VOID, 4}, {TypeId::REGULAR, 0}};
 const int TILE_POW_MAX = 14;
 const int ABSTRACT_DIST_SIGN_CHANGE_PENALTY = 2;
 const int MAX_SEARCH_WIDTH = 17;
@@ -210,10 +217,15 @@ const int TILE_ID_BITLEN = 5;
 const int TYPE_ID_BITLEN = 3;
 const int BACK_ID_BITLEN = 8;
 const int TILE_ID_COUNT = 1 << TILE_ID_BITLEN;
-const int TILE_ID_MASK = TILE_ID_COUNT - 1;
-const int TYPE_ID_MASK = ((1 << TYPE_ID_BITLEN) - 1) << TILE_ID_BITLEN;
-const int BACK_ID_MASK = ((1 << BACK_ID_BITLEN) - 1) << (TILE_ID_BITLEN + TYPE_ID_BITLEN);
+const uint16_t TILE_ID_MASK = TILE_ID_COUNT - 1;
+const uint16_t TYPE_ID_MASK = ((1 << TYPE_ID_BITLEN) - 1) << TILE_ID_BITLEN;
+const uint16_t BACK_ID_MASK = ((1 << BACK_ID_BITLEN) - 1) << (TILE_ID_BITLEN + TYPE_ID_BITLEN);
+const uint16_t BACK_AND_TYPE_ID_MASK = BACK_ID_MASK + TYPE_ID_MASK;
+const uint16_t BACK_AND_TILE_ID_MASK = BACK_ID_MASK + TILE_ID_MASK;
+const uint16_t TYPE_AND_TILE_ID_MASK = TYPE_ID_MASK + TILE_ID_MASK;
+const uint16_t REGULAR_TYPE_BITS = TypeId::REGULAR << TILE_ID_BITLEN;
 const bool TRACK_ZEROS = false;
+const bool TRACK_KILLABLE_TYPES = false;
 
 extern array<array<array<size_t, TILE_ID_COUNT - 1>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys;
 extern array<array<array<size_t, TypeId::REGULAR>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> type_id_hash_keys;
@@ -225,40 +237,43 @@ template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
 }
 
-int get_stuff_id(int back_id, int type_id, int tile_id);
-int get_type_bits(int stuff_id);
-int get_back_bits(int stuff_id);
-int get_tile_id(int stuff_id);
-int get_type_id(int stuff_id);
-int get_back_id(int stuff_id);
-int get_stuff_id(Vector2i pos);
-int get_tile_id(Vector2i pos);
-int get_type_id(Vector2i pos);
-int get_back_id(Vector2i pos);
-bool is_compatible(int type_id, int back_id);
-bool is_ids_mergeable(int tile_id1, int tile_id2);
-bool is_same_sign_merge(int tile_id1, int tile_id2);
-bool is_tile_unsigned(int tile_id);
-bool is_tile_unsigned_and_regular(int stuff_id);
-bool is_tile_empty_and_regular(int stuff_id);
+uint16_t get_stuff_id(uint8_t back_id, uint8_t type_id, uint8_t tile_id);
+uint16_t get_type_bits(uint16_t stuff_id);
+uint16_t get_back_bits(uint16_t stuff_id);
+uint8_t get_tile_id(uint16_t stuff_id);
+uint8_t get_type_id(uint16_t stuff_id);
+uint8_t get_back_id(uint16_t stuff_id);
+uint16_t get_stuff_id(Vector2i pos);
+uint8_t get_tile_id(Vector2i pos);
+uint8_t get_type_id(Vector2i pos);
+uint8_t get_back_id(Vector2i pos);
+uint16_t remove_tile_id(uint16_t stuff_id);
+uint16_t regular_type_id(uint16_t stuff_id);
+uint16_t remove_back_id(uint16_t stuff_id);
+bool is_compatible(uint8_t type_id, uint8_t back_id);
+bool is_ids_mergeable(uint8_t tile_id1, uint8_t tile_id2);
+bool is_same_sign_merge(uint8_t tile_id1, uint8_t tile_id2);
+bool is_tile_unsigned(uint8_t tile_id);
+bool is_tile_unsigned_and_regular(uint16_t stuff_id);
+bool is_tile_empty_and_regular(uint16_t stuff_id);
 bool is_pow_signs_mergeable(Vector2i ps1, Vector2i ps2);
 bool is_pow_splittable(int pow);
-bool is_eff_merge(int tile_id1, int tile_id2);
-bool is_type_preserved(int src_type_id, int dest_type_id);
-bool is_type_dominant(int src_type_id, int dest_type_id);
-Vector2i tid_to_ps(int tile_id);
-int ps_to_tid(Vector2i ps);
-int get_tile_pow(int tile_id);
-int get_tile_sign(int tile_id);
-int get_true_tile_sign(int tile_id);
-int get_opposite_tile_id(int tile_id);
+bool is_eff_merge(uint8_t tile_id1, uint8_t tile_id2);
+bool is_type_preserved(uint8_t src_type_id, uint8_t dest_type_id);
+bool is_type_dominant(uint8_t src_type_id, uint8_t dest_type_id);
+Vector2i tid_to_ps(uint8_t tile_id);
+uint8_t ps_to_tid(Vector2i ps);
+int get_tile_pow(uint8_t tile_id);
+int get_tile_sign(uint8_t tile_id);
+int get_true_tile_sign(uint8_t tile_id);
+uint8_t get_opposite_tile_id(uint8_t tile_id);
 Vector2i get_splitted_ps(Vector2i ps);
-int get_splitted_tid(int tile_id);
+uint8_t get_splitted_tid(uint8_t tile_id);
 
 //these assume merge is possible
-int get_merged_stuff_id(int src_stuff_id, int dest_stuff_id);
-int get_moved_stuff_id(int src_stuff_id, int dest_stuff_id);
-int get_merged_tile_id(int tile_id1, int tile_id2);
+uint16_t get_merged_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
+uint16_t get_moved_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
+uint8_t get_merged_tile_id(uint8_t tile_id1, uint8_t tile_id2);
 Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2);
 
 

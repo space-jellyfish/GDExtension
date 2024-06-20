@@ -68,24 +68,31 @@ void SANode::init_lv_pos(Vector2i pos) {
 }
 
 //updates hash
-void SANode::init_lv(Vector2i min, Vector2i max)  {
+//agent_pos is global
+//consult agent_type_id if not TRACK_KILLABLE_TYPES
+void SANode::init_lv(Vector2i min, Vector2i max, Vector2i agent_pos)  {
     int height = max.y - min.y;
     int width = max.x - min.x;
     lv.reserve(height);
+    uint8_t agent_type_id = get_type_id(agent_pos);
+    int agent_merge_priority = MERGE_PRIORITIES.at(agent_type_id);
 
     for (int y = min.y; y < max.y; ++y) {
-        vector<int> row;
+        vector<uint16_t> row;
         row.reserve(width);
 
         for (int x = min.x; x < max.x; ++x) {
             Vector2i pos(x, y);
-            int stuff_id = get_stuff_id(pos);
-            int tile_id = get_tile_id(stuff_id);
+            uint16_t stuff_id = get_stuff_id(pos);
+            uint8_t tile_id = get_tile_id(stuff_id);
+            uint8_t type_id = get_type_id(stuff_id);
 
             //to reduce branching factor
-            //note cell retains its type
             if (!TRACK_ZEROS && tile_id == TileId::ZERO) {
-                stuff_id -= TileId::ZERO;
+                stuff_id = remove_tile_id(stuff_id);
+            }
+            if (type_id != TypeId::REGULAR && !TRACK_KILLABLE_TYPES && MERGE_PRIORITIES.at(type_id) <= agent_merge_priority) {
+                stuff_id = regular_type_id(stuff_id);
             }
             row.push_back(stuff_id);
 
@@ -94,7 +101,7 @@ void SANode::init_lv(Vector2i min, Vector2i max)  {
                 hash ^= tile_id_hash_keys[y][x][tile_id-1];
             }
             
-            int type_id = get_type_id(stuff_id);
+            uint8_t type_id = get_type_id(stuff_id);
             if (type_id < TypeId::REGULAR) {
                 hash ^= type_id_hash_keys[y][x][type_id];
             }
@@ -105,12 +112,12 @@ void SANode::init_lv(Vector2i min, Vector2i max)  {
 
 //updates hash
 //assumes back_id unchanged
-void SANode::set_lv_sid(Vector2i pos, int new_sid) {
-    int old_sid = get_lv_sid(pos);
-    int old_tile_id = get_tile_id(old_sid);
-    int new_tile_id = get_tile_id(new_sid);
-    int old_type_id = get_type_id(old_sid);
-    int new_type_id = get_type_id(new_sid);
+void SANode::set_lv_sid(Vector2i pos, uint16_t new_sid) {
+    uint16_t old_sid = get_lv_sid(pos);
+    uint8_t old_tile_id = get_tile_id(old_sid);
+    uint8_t new_tile_id = get_tile_id(new_sid);
+    uint8_t old_type_id = get_type_id(old_sid);
+    uint8_t new_type_id = get_type_id(new_sid);
 
     if (old_type_id < TypeId::REGULAR) {
         hash ^= type_id_hash_keys[pos.y][pos.x][old_type_id];
@@ -136,9 +143,9 @@ void SANode::set_lv_pos(Vector2i pos) {
 
 //equivalent to set_lv_sid(pos, get_back_bits(get_lv_sid(pos))) but faster
 void SANode::clear_lv_sid(Vector2i pos) {
-    int stuff_id = get_lv_sid(pos);
-    int type_id = get_type_id(stuff_id);
-    int tile_id = get_tile_id(stuff_id);
+    uint16_t stuff_id = get_lv_sid(pos);
+    uint8_t type_id = get_type_id(stuff_id);
+    uint8_t tile_id = get_tile_id(stuff_id);
     if (type_id != TypeId::REGULAR) {
         hash ^= type_id_hash_keys[pos.y][pos.x][type_id];
     }
@@ -148,7 +155,7 @@ void SANode::clear_lv_sid(Vector2i pos) {
     lv[pos.y][pos.x] = get_back_bits(stuff_id);
 }
 
-int SANode::get_lv_sid(Vector2i pos) {
+uint16_t SANode::get_lv_sid(Vector2i pos) {
     return lv[pos.y][pos.x];
 }
 
@@ -169,27 +176,27 @@ int SANode::get_dist_to_lv_edge(Vector2i dir) {
 //ignore tiles outside of lv
 int SANode::get_slide_push_count(Vector2i dir, bool allow_type_change) {
     Vector2i curr_lv_pos = lv_pos;
-    int curr_stuff_id = get_lv_sid(curr_lv_pos);
-    int curr_tile_id = get_tile_id(curr_stuff_id);
-    int curr_type_id = get_type_id(curr_stuff_id);
+    uint16_t curr_stuff_id = get_lv_sid(curr_lv_pos);
+    uint8_t curr_tile_id = get_tile_id(curr_stuff_id);
+    uint8_t curr_type_id = get_type_id(curr_stuff_id);
     bool is_agent_enemy = T_ENEMY.find(curr_type_id) != T_ENEMY.end();
     int push_count = 0;
     int nearest_merge_push_count = -1;
     int dist_to_lv_edge = get_dist_to_lv_edge(dir);
 
     while (push_count <= min(tile_push_limit, dist_to_lv_edge - 1)) {
-        int temp_type_id = curr_type_id;
+        uint8_t temp_type_id = curr_type_id;
         curr_lv_pos += dir;
         curr_stuff_id = get_lv_sid(curr_lv_pos);
         curr_type_id = get_type_id(curr_stuff_id);
-        int curr_back_id = get_back_id(curr_stuff_id);
+        uint8_t curr_back_id = get_back_id(curr_stuff_id);
         if (!is_compatible(temp_type_id, curr_back_id) || (push_count > 0 && is_agent_enemy && curr_type_id == TypeId::PLAYER)) {
             return nearest_merge_push_count;
         }
 
         //push/merge logic
         //also bubble logic in case it becomes useful
-        int temp_tile_id = curr_tile_id;
+        uint8_t temp_tile_id = curr_tile_id;
         curr_tile_id = get_tile_id(curr_stuff_id);
 
         if (is_ids_mergeable(temp_tile_id, curr_tile_id)) {
@@ -224,20 +231,20 @@ void SANode::perform_slide(Vector2i dir, int push_count) {
 
     //skip slide if -dir and prev slide merged with empty or prev split merged with empty
     //skip split if -dir and prev slide merged with same sign regular or prev split merged with same sign regular
-    int neighbor_sid = get_lv_sid(lv_pos + dir);
-    int src_tile_id = get_tile_id(get_lv_sid(lv_pos));
-    int neighbor_tile_id = get_tile_id(neighbor_sid);
-    int neighbor_type_id = get_type_id(neighbor_sid);
+    uint16_t neighbor_sid = get_lv_sid(lv_pos + dir);
+    uint8_t src_tile_id = get_tile_id(get_lv_sid(lv_pos));
+    uint8_t neighbor_tile_id = get_tile_id(neighbor_sid);
+    uint8_t neighbor_type_id = get_type_id(neighbor_sid);
     prev_merged_empty = is_tile_empty_and_regular(neighbor_sid);
     prev_merged_ssr = is_same_sign_merge(src_tile_id, neighbor_tile_id) && neighbor_type_id == TypeId::REGULAR;
 
     for (int dist_to_merge=0; dist_to_merge <= push_count; ++dist_to_merge) {
         Vector2i curr_lv_pos = merge_lv_pos - dist_to_merge * dir;
-        int prev_sid = get_lv_sid(curr_lv_pos - dir);
-        int result_sid = prev_sid;
+        uint16_t prev_sid = get_lv_sid(curr_lv_pos - dir);
+        uint16_t result_sid = prev_sid;
 
         if (dist_to_merge == 0) {
-            int curr_sid = get_lv_sid(curr_lv_pos);
+            uint16_t curr_sid = get_lv_sid(curr_lv_pos);
             result_sid = get_merged_stuff_id(prev_sid, curr_sid);
         }
         set_lv_sid(curr_lv_pos, result_sid);
@@ -261,7 +268,7 @@ shared_ptr<SANode> SANode::try_slide(Vector2i dir, bool allow_type_change) {
 }
 
 shared_ptr<SANode> SANode::try_split(Vector2i dir, bool allow_type_change) {
-    int src_sid = get_lv_sid(lv_pos);
+    uint16_t src_sid = get_lv_sid(lv_pos);
     Vector2i ps = tid_to_ps(get_tile_id(src_sid));
     if (!is_pow_splittable(ps.x)) {
         return nullptr;
@@ -269,13 +276,13 @@ shared_ptr<SANode> SANode::try_split(Vector2i dir, bool allow_type_change) {
 
     //halve src tile, try_slide, then (re)set its tile_id
     //splitted is new tile, splitter is old tile
-    int untyped_split_sid = get_back_bits(src_sid) + get_splitted_tid(get_tile_id(src_sid));
-    int splitted_sid = untyped_split_sid + get_type_bits(src_sid);
+    uint16_t untyped_split_sid = get_back_bits(src_sid) + get_splitted_tid(get_tile_id(src_sid));
+    uint16_t splitted_sid = untyped_split_sid + get_type_bits(src_sid);
     set_lv_sid(lv_pos, splitted_sid);
     shared_ptr<SANode> ans = try_slide(dir, allow_type_change);
     if (ans != nullptr) {
         //insert splitter tile
-        int splitter_sid = untyped_split_sid + (TypeId::REGULAR << TILE_ID_BITLEN);
+        uint16_t splitter_sid = untyped_split_sid + (TypeId::REGULAR << TILE_ID_BITLEN);
         ans->set_lv_sid(lv_pos, splitter_sid);
     }
     //reset src tile in this
@@ -311,10 +318,16 @@ shared_ptr<SANode> SANode::try_action(Vector3i action, bool allow_type_change) {
 //doesn't update f/g/h
 //doesn't change agent type/tile_id
 //add as JP if adj cell empty or if agent can push or merge with adj tile
-shared_ptr<SANode> SANode::jump(Vector2i dir, Vector2i lv_end) {
-    int src_stuff_id = get_lv_sid(lv_pos);
-    int agent_type_id = get_type_id(src_stuff_id);
-    int src_tile_id = get_tile_id(src_stuff_id);
+shared_ptr<SANode> SANode::jump(Vector2i dir, Vector2i lv_end, bool allow_type_change) {
+    //check for stored jp
+    auto it = jump_points.find(dir);
+    if (it != jump_points.end()) {
+        return (*it).second;
+    }
+
+    uint16_t src_stuff_id = get_lv_sid(lv_pos);
+    uint8_t agent_type_id = get_type_id(src_stuff_id);
+    uint8_t src_tile_id = get_tile_id(src_stuff_id);
     Vector2i curr_pos = lv_pos + dir;
     int dist_to_lv_edge = get_dist_to_lv_edge(dir);
     int dist = 1;
@@ -330,18 +343,18 @@ shared_ptr<SANode> SANode::jump(Vector2i dir, Vector2i lv_end) {
     }
 
     while (dist <= dist_to_lv_edge) {
-        int curr_stuff_id = get_lv_sid(curr_pos);
+        uint16_t curr_stuff_id = get_lv_sid(curr_pos);
 
         if (!is_tile_unsigned_and_regular(curr_stuff_id)) {
             return nullptr;
         }
-        int curr_back_id = get_back_id(curr_stuff_id);
+        uint8_t curr_back_id = get_back_id(curr_stuff_id);
         if (!is_compatible(agent_type_id, curr_back_id)) {
             return nullptr;
         }
 
         //update zero_count
-        int curr_tile_id = get_tile_id(curr_stuff_id);
+        uint8_t curr_tile_id = get_tile_id(curr_stuff_id);
         if (curr_tile_id == TileId::ZERO) {
             ++zero_count;
         }
@@ -355,39 +368,55 @@ shared_ptr<SANode> SANode::jump(Vector2i dir, Vector2i lv_end) {
         //remember to do bound checking
         if (dir1 != Vector2i(0, 0)) {
             Vector2i pos1 = curr_pos + dir1;
-            int stuff_id1 = get_lv_sid(pos1);
+            uint16_t stuff_id1 = get_lv_sid(pos1);
+            if (horizontal) {
+                bool dir1_blocked = !is_tile_empty_and_regular(stuff_id1);
+                if (dir1_blocked && is_tile_unsigned_and_regular(stuff_id1)) {
+                    return curr_jp;
+                }
+            }
+            else {
+                shared_ptr<SANode> secondary_jp = curr_jp->jump(dir1, lv_end, allow_type_change);
+                if (secondary_jp) {
+                    curr_jp->jump_points[dir1] = secondary_jp;
+                    return curr_jp;
+                }
+            }
+
+
             if (!horizontal && curr_jp->jump(dir1, lv_end)) {
                 return curr_jp;
             }
             else if (is_tile_unsigned_and_regular(stuff_id1)) {
                 return curr_jp;
             }
-            int tile_id1 = get_tile_id(stuff_id1);
-            int type_id1 = get_type_id(stuff_id1);
+            uint8_t tile_id1 = get_tile_id(stuff_id1);
+            uint8_t type_id1 = get_type_id(stuff_id1);
+            //or src_tile_id splittable and get_splitted_tid(src_tile_id) is mergeable
             if (is_ids_mergeable(src_tile_id, tile_id1) && is_type_preserved(agent_type_id, type_id1)) {
                 return curr_jp;
             }
         }
         if (dir2 != Vector2i(0, 0)) {
             Vector2i pos2 = curr_pos + dir2;
-            int stuff_id2 = get_lv_sid(pos2);
+            uint16_t stuff_id2 = get_lv_sid(pos2);
             if (!horizontal && curr_jp->jump(dir2, lv_end)) {
                 return curr_jp;
             }
             else if (is_tile_unsigned_and_regular(stuff_id2)) {
                 return curr_jp;
             }
-            int tile_id2 = get_tile_id(stuff_id2);
-            int type_id2 = get_type_id(stuff_id2);
+            uint8_t tile_id2 = get_tile_id(stuff_id2);
+            uint8_t type_id2 = get_type_id(stuff_id2);
             if (is_ids_mergeable(src_tile_id, tile_id2) && is_type_preserved(agent_type_id, type_id2)) {
                 return curr_jp;
             }
         }
         if (dist < dist_to_lv_edge) {
             Vector2i next_pos = curr_pos + dir;
-            int next_stuff_id = get_lv_sid(next_pos);
-            int next_tile_id = get_tile_id(next_stuff_id);
-            int next_type_id = get_type_id(next_stuff_id);
+            uint16_t next_stuff_id = get_lv_sid(next_pos);
+            uint8_t next_tile_id = get_tile_id(next_stuff_id);
+            uint8_t next_type_id = get_type_id(next_stuff_id);
             if (!is_tile_unsigned_and_regular(next_stuff_id) && is_ids_mergeable(src_tile_id, next_tile_id) && is_type_preserved(agent_type_id, next_type_id)) {
                 return curr_jp;
             }
@@ -416,15 +445,15 @@ shared_ptr<SANode> SANode::get_jump_point(Vector2i dir, Vector2i jp_pos, int jum
     Vector2i curr_pos = jp_pos + dir;
     int max_dist = min(dist_to_lv_edge, zero_count, tile_push_limit);
     while (dist <= max_dist) {
-        int curr_stuff_id = ans->get_lv_sid(curr_pos);
-        int curr_back_id = get_back_id(curr_stuff_id);
+        uint16_t curr_stuff_id = ans->get_lv_sid(curr_pos);
+        uint8_t curr_back_id = get_back_id(curr_stuff_id);
         if (!is_compatible(TypeId::REGULAR, curr_back_id)) {
             break;
         }
-        int curr_type_id = get_type_id(curr_stuff_id);
+        uint8_t curr_type_id = get_type_id(curr_stuff_id);
 
         if (curr_type_id == TypeId::REGULAR) {
-            int curr_tile_id = get_tile_id(curr_stuff_id);
+            uint8_t curr_tile_id = get_tile_id(curr_stuff_id);
 
             if (curr_tile_id == TileId::EMPTY) {
                 ans->set_lv_sid(curr_pos, ans->get_lv_sid(curr_pos) + TileId::ZERO);
@@ -478,7 +507,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
 
     shared_ptr<SANode> first = make_shared<SANode>();
     first->init_lv_pos(start - min);
-    first->init_lv(min, max);
+    first->init_lv(min, max, start);
     open.push(first);
     best_dists[first->hash] = first->f;
 
@@ -554,7 +583,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
 
     shared_ptr<SANode> first = make_shared<SANode>();
     first->init_lv_pos(start - min);
-    first->init_lv(min, max);
+    first->init_lv(min, max, start);
     open.push(first);
     best_dists[first->hash] = first->f;
 
@@ -589,6 +618,11 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
                         continue;
                     }
                 }
+
+                if (action_id == ActionId::SLIDE) {
+                    //only search in dir of natural neighbors (add exception for first node)
+                    if (curr->get_lv_sid(curr->lv_pos + dir))
+                }
             }  
         }
     }
@@ -615,7 +649,7 @@ Array Pathfinder::pathfind_sa_rrdastar(int max_depth, Vector2i min, Vector2i max
 }
 
 Array Pathfinder::pathfind_sa_ididjpastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    int tile_depth = 0;
+    int tile_depth = 0; //maybe rename to env_depth
     int search_depth = 0;
 
     Array ans;
@@ -650,12 +684,12 @@ void Pathfinder::generate_hash_keys() {
     for (int y=0; y < MAX_SEARCH_HEIGHT; ++y) {
         for (int x=0; x < MAX_SEARCH_WIDTH; ++x) {
             //tile_id
-            for (int tile_id=1; tile_id < TILE_ID_COUNT; ++tile_id) {
+            for (uint8_t tile_id=1; tile_id < TILE_ID_COUNT; ++tile_id) {
                 tile_id_hash_keys[y][x][tile_id-1] = distribution(generator);
             }
 
             //type_id
-            for (int type_id=0; type_id < TypeId::REGULAR; ++type_id) {
+            for (uint8_t type_id=0; type_id < TypeId::REGULAR; ++type_id) {
                 type_id_hash_keys[y][x][type_id] = distribution(generator);
             }
 
@@ -675,7 +709,7 @@ bool Pathfinder::is_immediately_trapped(Vector2i pos) {
     return false;
 }
 
-void Pathfinder::rrd_init(int agent_type_id, Vector2i goal_pos) {
+void Pathfinder::rrd_init(uint8_t agent_type_id, Vector2i goal_pos) {
     if (abstract_dists.find(goal_pos) != abstract_dists.end()) {
         return;
     }
@@ -692,7 +726,7 @@ void Pathfinder::rrd_init(int agent_type_id, Vector2i goal_pos) {
     abstract_dists[goal_pos] = lists;
 }
 
-bool Pathfinder::rrd_resume(int agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
+bool Pathfinder::rrd_resume(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
     if (!is_compatible(agent_type_id, get_back_id(node_pos)) || !is_compatible(agent_type_id, get_back_id(goal_pos))) {
         return false;
     }
@@ -723,14 +757,14 @@ bool Pathfinder::rrd_resume(int agent_type_id, Vector2i goal_pos, Vector2i node_
         }
         open.pop();
 
-        int curr_tile_id = get_tile_id(n.pos);
+        uint8_t curr_tile_id = get_tile_id(n.pos);
         for (Vector2i dir : DIRECTIONS) {
             Vector2i next_pos = n.pos + dir;
 
             if (closed.find(next_pos) != closed.end()) { //closed is all optimal
                 continue;
             }
-            int next_tile_id = get_tile_id(next_pos);
+            uint8_t next_tile_id = get_tile_id(next_pos);
             int next_g = n.g + get_move_abs_dist(curr_tile_id, next_tile_id);
             AbstractNode m(next_pos, next_g);
             open.push(m);
@@ -739,7 +773,7 @@ bool Pathfinder::rrd_resume(int agent_type_id, Vector2i goal_pos, Vector2i node_
     return false; //unreachable
 }
 
-int Pathfinder::get_move_abs_dist(int src_tile_id, int dest_tile_id) {
+int Pathfinder::get_move_abs_dist(uint8_t src_tile_id, uint8_t dest_tile_id) {
     if (dest_tile_id % TileId::ZERO == 0) {
         return 1;
     }
@@ -753,13 +787,13 @@ int Pathfinder::get_move_abs_dist(int src_tile_id, int dest_tile_id) {
 }
 
 //assume neither is zero or empty
-int Pathfinder::get_sep_abs_dist(int tile_id1, int tile_id2) {
+int Pathfinder::get_sep_abs_dist(uint8_t tile_id1, uint8_t tile_id2) {
     int ans = abs(tile_id1 - tile_id2) * 2;
     int sgn_change_penalty = int(get_true_tile_sign(tile_id1) * get_true_tile_sign(tile_id2) == -1) * ABSTRACT_DIST_SIGN_CHANGE_PENALTY;
     return ans + sgn_change_penalty;
 }
 
-int Pathfinder::get_abs_dist(int agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
+int Pathfinder::get_abs_dist(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
     assert(abstract_dists.find(goal_pos) != abstract_dists.end());
 
     pair<pq, um>& lists = abstract_dists[goal_pos];
@@ -778,50 +812,65 @@ int Pathfinder::get_abs_dist(int agent_type_id, Vector2i goal_pos, Vector2i node
 
 
 //consider using get_*_bits() and addition instead
-int get_stuff_id(int back_id, int type_id, int tile_id) {
+uint16_t get_stuff_id(uint8_t back_id, uint8_t type_id, uint8_t tile_id) {
     return (back_id << (TILE_ID_BITLEN + TYPE_ID_BITLEN)) + (type_id << TILE_ID_BITLEN) + tile_id;
 }
 
-int get_type_bits(int stuff_id) {
+uint16_t get_type_bits(uint16_t stuff_id) {
     return stuff_id & TYPE_ID_MASK;
 }
 
-int get_back_bits(int stuff_id) {
+uint16_t get_back_bits(uint16_t stuff_id) {
     return stuff_id & BACK_ID_MASK;
 }
 
-int get_tile_id(int stuff_id) {
+uint8_t get_tile_id(uint16_t stuff_id) {
     return stuff_id & TILE_ID_MASK;
 }
 
-int get_type_id(int stuff_id) {
+uint8_t get_type_id(uint16_t stuff_id) {
     return get_type_bits(stuff_id) >> TILE_ID_BITLEN;
 }
 
-int get_back_id(int stuff_id) {
+uint8_t get_back_id(uint16_t stuff_id) {
     return get_back_bits(stuff_id) >> (TILE_ID_BITLEN + TYPE_ID_BITLEN);
 }
 
-int get_stuff_id(Vector2i pos) {
+uint16_t get_stuff_id(Vector2i pos) {
     return (get_back_id(pos) << 8) + (get_type_id(pos) << 5) + get_tile_id(pos);
 }
 
-int get_tile_id(Vector2i pos) {
+uint8_t get_tile_id(Vector2i pos) {
     //TileId::EMPTY is represented by atlas(-1, -1)
     return cells->get_cell_atlas_coords(LayerId::TILE, pos).x + 1;
 }
 
-int get_type_id(Vector2i pos) {
+uint8_t get_type_id(Vector2i pos) {
     //TileId::EMPTY is represented by atlas(-1, -1)
     return max(cells->get_cell_atlas_coords(LayerId::TILE, pos).y, 0);
 }
 
 //assume atlas isn't (-1, -1), cell has been generated
-int get_back_id(Vector2i pos) {
+uint8_t get_back_id(Vector2i pos) {
     return cells->get_cell_atlas_coords(LayerId::BACK, pos).x;
 }
 
-bool is_compatible(int type_id, int back_id) {
+//resulting tile_id is EMPTY
+uint16_t remove_tile_id(uint16_t stuff_id) {
+    return stuff_id & BACK_AND_TYPE_ID_MASK;
+}
+
+//resulting type_id is REGULAR
+uint16_t regular_type_id(uint16_t stuff_id) {
+    return stuff_id & BACK_AND_TILE_ID_MASK + REGULAR_TYPE_BITS;
+}
+
+//resulting back_id is EMPTY
+uint16_t remove_back_id(uint16_t stuff_id) {
+    return stuff_id & TYPE_AND_TILE_ID_MASK;
+}
+
+bool is_compatible(uint8_t type_id, uint8_t back_id) {
     if (back_id == BackId::NONE) {
         return true;
     }
@@ -835,7 +884,7 @@ bool is_compatible(int type_id, int back_id) {
     return type_id == TypeId::PLAYER || type_id == TypeId::REGULAR;
 }
 
-bool is_ids_mergeable(int tile_id1, int tile_id2) {
+bool is_ids_mergeable(uint8_t tile_id1, uint8_t tile_id2) {
     if (is_tile_unsigned(tile_id1) || is_tile_unsigned(tile_id2)) {
         return true;
     }
@@ -845,19 +894,19 @@ bool is_ids_mergeable(int tile_id1, int tile_id2) {
 }
 
 //merges involving TileId::ZERO/EMPTY do not count
-bool is_same_sign_merge(int tile_id1, int tile_id2) {
+bool is_same_sign_merge(uint8_t tile_id1, uint8_t tile_id2) {
     return !is_tile_unsigned(tile_id1) && tile_id1 == tile_id2 && get_tile_pow(tile_id1) < TILE_POW_MAX;
 }
 
-bool is_tile_unsigned(int tile_id) {
+bool is_tile_unsigned(uint8_t tile_id) {
     return tile_id == TileId::EMPTY || tile_id == TileId::ZERO;
 }
 
-bool is_tile_unsigned_and_regular(int stuff_id) {
+bool is_tile_unsigned_and_regular(uint16_t stuff_id) {
     return is_tile_unsigned(get_tile_id(stuff_id)) && get_type_id(stuff_id) == TypeId::REGULAR;
 }
 
-bool is_tile_empty_and_regular(int stuff_id) {
+bool is_tile_empty_and_regular(uint16_t stuff_id) {
     return get_tile_id(stuff_id) == TileId::EMPTY && get_type_id(stuff_id) == TypeId::REGULAR;
 }
 
@@ -877,24 +926,24 @@ bool is_pow_splittable(int pow) {
 
 //assume ids mergeable
 //eff merge means merge is undoable with split in opposite dir => same sign, nonzero, dest is regular
-bool is_eff_merge(int src_stuff_id, int dest_stuff_id) {
-    int src_tile_id = get_tile_id(src_stuff_id);
+bool is_eff_merge(uint16_t src_stuff_id, uint16_t dest_stuff_id) {
+    uint8_t src_tile_id = get_tile_id(src_stuff_id);
     return get_type_id(dest_stuff_id) == TypeId::REGULAR && src_tile_id == get_tile_id(dest_stuff_id) && !is_tile_unsigned(src_tile_id);
 }
 
 //assume type_ids valid
-bool is_type_preserved(int src_type_id, int dest_type_id) {
+bool is_type_preserved(uint8_t src_type_id, uint8_t dest_type_id) {
     return MERGE_PRIORITIES.at(src_type_id) >= MERGE_PRIORITIES.at(dest_type_id);
 }
 
 //assume type_ids valid
 //equivalent to !is_type_preserved(dest_type_id, src_type_id), but faster
-bool is_type_dominant(int src_type_id, int dest_type_id) {
+bool is_type_dominant(uint8_t src_type_id, uint8_t dest_type_id) {
     return MERGE_PRIORITIES.at(src_type_id) > MERGE_PRIORITIES.at(dest_type_id);
 }
 
 //treats TileId::EMPTY as TileId::ZERO
-Vector2i tid_to_ps(int tile_id) {
+Vector2i tid_to_ps(uint8_t tile_id) {
     if (is_tile_unsigned(tile_id)) {
         return Vector2i(-1, 1);
     }
@@ -902,12 +951,12 @@ Vector2i tid_to_ps(int tile_id) {
     return Vector2i(abs(signed_incremented_pow) - 1, sgn(signed_incremented_pow));
 }
 
-int ps_to_tid(Vector2i ps) {
+uint8_t ps_to_tid(Vector2i ps) {
     return (ps.x + 1) * ps.y + TileId::ZERO;
 }
 
 //treats TileId::EMPTY as TileId::ZERO
-int get_tile_pow(int tile_id) {
+int get_tile_pow(uint8_t tile_id) {
     if (tile_id == TileId::EMPTY) {
         return -1;
     }
@@ -915,7 +964,7 @@ int get_tile_pow(int tile_id) {
 }
 
 //for EMPTY and ZERO, either +-1 is fine
-int get_tile_sign(int tile_id) {
+int get_tile_sign(uint8_t tile_id) {
     if (tile_id == TileId::ZERO) {
         return 1;
     }
@@ -923,7 +972,7 @@ int get_tile_sign(int tile_id) {
 }
 
 //return 0 for EMPTY and ZERO
-int get_true_tile_sign(int tile_id) {
+int get_true_tile_sign(uint8_t tile_id) {
     if (is_tile_unsigned(tile_id)) {
         return 0;
     }
@@ -931,7 +980,7 @@ int get_true_tile_sign(int tile_id) {
 }
 
 //assume tile_id isn't EMPTY
-int get_opposite_tile_id(int tile_id) {
+uint8_t get_opposite_tile_id(uint8_t tile_id) {
     assert(tile_id != TileId::EMPTY);
     return TILE_ID_COUNT - tile_id;
 }
@@ -942,32 +991,40 @@ Vector2i get_splitted_ps(Vector2i ps) {
 }
 
 //assumes split possible
-int get_splitted_tid(int tile_id) {
+uint8_t get_splitted_tid(uint8_t tile_id) {
     return tile_id - get_tile_sign(tile_id);
 }
 
 //assumes merge possible
+//implements hostile death upon becoming 0
 //return TileId::EMPTY in place of ZERO to reduce branching
-int get_merged_stuff_id(int src_stuff_id, int dest_stuff_id) {
-    int back_bits = get_back_bits(dest_stuff_id);
-    int src_type_id = get_type_id(src_stuff_id);
-    int dest_type_id = get_type_id(dest_stuff_id);
-    int type_bits = (is_type_preserved(src_type_id, dest_type_id) ? src_type_id : dest_type_id) << TILE_ID_BITLEN;
-    int tile_bits = get_merged_tile_id(get_tile_id(src_stuff_id), get_tile_id(dest_stuff_id));
+uint16_t get_merged_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id) {
+    uint16_t back_bits = get_back_bits(dest_stuff_id);
+    uint8_t src_type_id = get_type_id(src_stuff_id);
+    uint8_t dest_type_id = get_type_id(dest_stuff_id);
+    uint8_t type_id = is_type_preserved(src_type_id, dest_type_id) ? src_type_id : dest_type_id;
+    uint16_t tile_bits = get_merged_tile_id(get_tile_id(src_stuff_id), get_tile_id(dest_stuff_id));
+
+    //hostile death
+    if (tile_bits == TileId::ZERO && type_id == TypeId::HOSTILE) {
+        type_id = TypeId::REGULAR;
+    }
+    uint16_t type_bits = type_id << TILE_ID_BITLEN;
+
     return back_bits + type_bits + tile_bits;
 }
 
 //get_merged_stuff_id but assuming dest is regular zero or empty
-int get_moved_stuff_id(int src_stuff_id, int dest_stuff_id) {
-    int back_bits = get_back_bits(dest_stuff_id);
-    int type_bits = get_type_bits(src_stuff_id);
-    int tile_bits = get_tile_id(src_stuff_id);
+uint16_t get_moved_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id) {
+    uint16_t back_bits = get_back_bits(dest_stuff_id);
+    uint16_t type_bits = get_type_bits(src_stuff_id);
+    uint16_t tile_bits = get_tile_id(src_stuff_id);
     return back_bits + type_bits + tile_bits;
 }
 
 //assumes merge possible
 //return TileId::EMPTY in place of ZERO to reduce branching
-int get_merged_tile_id(int tile_id1, int tile_id2) {
+uint8_t get_merged_tile_id(uint8_t tile_id1, uint8_t tile_id2) {
     if (is_tile_unsigned(tile_id1)) {
         return (!TRACK_ZEROS && tile_id2 == TileId::ZERO) ? TileId::EMPTY : tile_id2;
     }
