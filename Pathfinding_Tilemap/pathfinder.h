@@ -15,6 +15,7 @@ using namespace godot;
 //each cell is represented as | BackId (8) | TypeId (3) | TileId (5) |
 //Vector2i max is exclusive
 //sign in pow_sign must be +-1
+//only REGULAR zeros are bubblable
 
 //treat EMPTY and ZERO as distinct nodes; there are no zeros unless TRACK_ZEROS is true
 //use TRACK_ZEROS if zeros are relevant to gameplay logic
@@ -22,7 +23,9 @@ using namespace godot;
 //killable type is type with merge priority <= that of agent type
 //treat killing other type as distinct node; there are no killable types unless TRACK_KILLABLE_TYPES is true
 //for SA search, don't use TRACK_KILLABLE_TYPES
-//if hostile merges with killable type into 0, killable type is killed, then hostile dies, resulting in regular 0 
+
+//if hostile merges with killable type into 0, killable type is killed, then hostile dies, resulting in regular 0
+//don't allow merge onto incompatible back_id, even if result type is compatible
 
 enum TileId {
     EMPTY = 0,
@@ -72,6 +75,7 @@ enum SearchId {
 enum ActionId {
 	SLIDE = 0,
 	SPLIT,
+    JUMP,
 	END,
 };
 
@@ -103,14 +107,17 @@ struct Vector2iHasher {
 struct SANode : public enable_shared_from_this<SANode> {
     Vector2i lv_pos;
     vector<vector<uint16_t>> lv;
-    //Vector3i prev_action;
+    int g=0, h=0, f=0; //use f for dijkstra
+    //for fast equality check
+    size_t hash;
+    //for backtracing
     vector<Vector3i> prev_actions = {Vector3i(0, 0, 0)};
     shared_ptr<SANode> prev = nullptr;
-    bool prev_merged_empty = false; //to prevent backtracking
-    bool prev_merged_ssr = false; //to prevent backtracking; ssr means same sign regular
-    unordered_map<Vector2i, shared_ptr<SANode>> jump_points; //dir, jp; to store extra results from jump()
-    int g=0, h=0, f=0; //use f for dijkstra
-    size_t hash;
+    int prev_push_count = 0;
+    //to store intermediate results/prevent backtracking
+    //nullptr indicates neighbor is either pruned or invalid
+    unordered_map<Vector3i, weak_ptr<SANode>> neighbors; //action, SANode
+
 
     Array trace_path(int path_len);
     void print_lv();
@@ -129,10 +136,11 @@ struct SANode : public enable_shared_from_this<SANode> {
     
     shared_ptr<SANode> try_slide(Vector2i dir, bool allow_type_change);
     shared_ptr<SANode> try_split(Vector2i dir, bool allow_type_change);
-    shared_ptr<SANode> try_action(Vector3i action, bool allow_type_change);
+    shared_ptr<SANode> try_action(Vector3i action, Vector2i lv_end, bool allow_type_change);
 
-    shared_ptr<SANode> jump(Vector2i dir, Vector2i lv_end, bool allow_type_change);
-    shared_ptr<SANode> get_jump_point(Vector2i dir, Vector2i jp_pos, int jump_dist, int zero_count);
+    shared_ptr<SANode> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change);
+    shared_ptr<SANode> get_jump_point(Vector2i dir, Vector2i jp_pos, int jump_dist);
+    void prune_action_ids(Vector2i dir);
 };
 
 struct SANodeHashGetter  {
@@ -252,6 +260,7 @@ uint16_t regular_type_id(uint16_t stuff_id);
 uint16_t remove_back_id(uint16_t stuff_id);
 bool is_compatible(uint8_t type_id, uint8_t back_id);
 bool is_ids_mergeable(uint8_t tile_id1, uint8_t tile_id2);
+bool is_ids_split_mergeable(uint8_t src_tile_id, uint8_t dest_tile_id);
 bool is_same_sign_merge(uint8_t tile_id1, uint8_t tile_id2);
 bool is_tile_unsigned(uint8_t tile_id);
 bool is_tile_unsigned_and_regular(uint16_t stuff_id);
@@ -264,6 +273,7 @@ bool is_type_dominant(uint8_t src_type_id, uint8_t dest_type_id);
 Vector2i tid_to_ps(uint8_t tile_id);
 uint8_t ps_to_tid(Vector2i ps);
 int get_tile_pow(uint8_t tile_id);
+int get_signed_tile_pow(uint8_t tile_id);
 int get_tile_sign(uint8_t tile_id);
 int get_true_tile_sign(uint8_t tile_id);
 uint8_t get_opposite_tile_id(uint8_t tile_id);
@@ -272,7 +282,7 @@ uint8_t get_splitted_tid(uint8_t tile_id);
 
 //these assume merge is possible
 uint16_t get_merged_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
-uint16_t get_moved_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
+uint16_t get_jumped_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
 uint8_t get_merged_tile_id(uint8_t tile_id1, uint8_t tile_id2);
 Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2);
 

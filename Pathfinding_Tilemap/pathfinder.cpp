@@ -159,7 +159,8 @@ uint16_t SANode::get_lv_sid(Vector2i pos) {
     return lv[pos.y][pos.x];
 }
 
-//longest distance from lv_pos in dir without leaving lv
+//lv_edge is furthest valid cell in dir
+//return value is negative if lv_pos is out of bounds in dir
 int SANode::get_dist_to_lv_edge(Vector2i dir) {
     if (dir == Vector2i(1, 0)) {
         return lv[0].size() - 1 - lv_pos.x;
@@ -235,8 +236,12 @@ void SANode::perform_slide(Vector2i dir, int push_count) {
     uint8_t src_tile_id = get_tile_id(get_lv_sid(lv_pos));
     uint8_t neighbor_tile_id = get_tile_id(neighbor_sid);
     uint8_t neighbor_type_id = get_type_id(neighbor_sid);
-    prev_merged_empty = is_tile_empty_and_regular(neighbor_sid);
-    prev_merged_ssr = is_same_sign_merge(src_tile_id, neighbor_tile_id) && neighbor_type_id == TypeId::REGULAR;
+    if (is_tile_empty_and_regular(neighbor_sid)) {
+        neighbors[Vector3i(-dir.x, -dir.y, ActionId::SLIDE)] = weak_ptr<SANode>();
+    }
+    if (is_same_sign_merge(src_tile_id, neighbor_tile_id) && neighbor_type_id == TypeId::REGULAR) {
+        neighbors[Vector3i(-dir.x, -dir.y, ActionId::SPLIT)] = weak_ptr<SANode>();
+    }
 
     for (int dist_to_merge=0; dist_to_merge <= push_count; ++dist_to_merge) {
         Vector2i curr_lv_pos = merge_lv_pos - dist_to_merge * dir;
@@ -257,16 +262,19 @@ void SANode::perform_slide(Vector2i dir, int push_count) {
     set_lv_pos(lv_pos + dir);
 }
 
+//updates prev_push_count
 shared_ptr<SANode> SANode::try_slide(Vector2i dir, bool allow_type_change) {
     int push_count = get_slide_push_count(dir, allow_type_change);
     if (push_count != -1) {
         shared_ptr<SANode> m = make_shared<SANode>(*this);
         m->perform_slide(dir, push_count);
+        m->prev_push_count = push_count;
         return m;
     }
     return nullptr;
 }
 
+//updates prev_push_count
 shared_ptr<SANode> SANode::try_split(Vector2i dir, bool allow_type_change) {
     uint16_t src_sid = get_lv_sid(lv_pos);
     Vector2i ps = tid_to_ps(get_tile_id(src_sid));
@@ -293,10 +301,16 @@ shared_ptr<SANode> SANode::try_split(Vector2i dir, bool allow_type_change) {
 
 //updates prev, prev_actions
 //doesn't update f/g/h
-shared_ptr<SANode> SANode::try_action(Vector3i action, bool allow_type_change) {
+//stores results
+shared_ptr<SANode> SANode::try_action(Vector3i action, Vector2i lv_end, bool allow_type_change) {
+    //check for stored neighbor
     Vector2i dir(action.x, action.y);
-    shared_ptr<SANode> ans;
+    auto it = neighbors.find(action);
+    if (it != neighbors.end()) {
+        return (*it).second.lock();
+    }
 
+    shared_ptr<SANode> ans;
     switch(action.z) {
         case ActionId::SLIDE:
             ans = try_slide(dir, allow_type_change);
@@ -304,182 +318,190 @@ shared_ptr<SANode> SANode::try_action(Vector3i action, bool allow_type_change) {
         case ActionId::SPLIT:
             ans = try_split(dir, allow_type_change);
             break;
+        case ActionId::JUMP:
+            ans = try_jump(dir, lv_end, allow_type_change);
         default:
             ans = try_slide(dir, allow_type_change);
     }
-    if (ans != nullptr) {
-        ans->prev = shared_from_this();
-        ans->prev_actions = {action};
+    if (ans) {
+        if (action.z != ActionId::JUMP) {
+            //update prev/prev_actions
+            ans->prev = shared_from_this();
+            ans->prev_actions = {action};
+        }
+        //update neighbors
+        neighbors[action] = ans;
+    }
+    else {
+        neighbors[action] = weak_ptr<SANode>();
     }
     return ans;
 }
 
-//avoids splitting and eff merging
 //doesn't update f/g/h
+//get_jump_point() correctly inits push_count to 0
 //doesn't change agent type/tile_id
-//add as JP if adj cell empty or if agent can push or merge with adj tile
-shared_ptr<SANode> SANode::jump(Vector2i dir, Vector2i lv_end, bool allow_type_change) {
-    //check for stored jp
-    auto it = jump_points.find(dir);
-    if (it != jump_points.end()) {
-        return (*it).second;
+//doesn't split or push/merge any signed_or_regular tiles
+//see Devlog/jump_conditions for details
+//when expanding a jp, expand split in all dirs, expand slide iff next tile isn't unsigned_and_regular
+shared_ptr<SANode> SANode::try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change) {
+    //check for stored neighbor
+    auto it = neighbors.find(Vector3i(dir.x, dir.y, ActionId::JUMP));
+    if (it != neighbors.end()) {
+        return (*it).second.lock();
     }
 
-    uint16_t src_stuff_id = get_lv_sid(lv_pos);
-    uint8_t agent_type_id = get_type_id(src_stuff_id);
-    uint8_t src_tile_id = get_tile_id(src_stuff_id);
-    Vector2i curr_pos = lv_pos + dir;
+    //check bound
     int dist_to_lv_edge = get_dist_to_lv_edge(dir);
-    int dist = 1;
-    int zero_count = 0; //number of regular zeros from lv_pos+dir to jp_pos inclusive
-    bool horizontal = (H_DIRS.find(dir) != H_DIRS.end());
-    Vector2i dir1 = horizontal ? Vector2i(0, 1) : Vector2i(1, 0);
-    Vector2i dir2 = horizontal ? Vector2i(0, -1) : Vector2i(-1, 0);
-    if (!get_dist_to_lv_edge(dir1)) {
-        dir1 = Vector2i(0, 0);
+    if (!dist_to_lv_edge) {
+        return nullptr;
     }
-    if (!get_dist_to_lv_edge(dir2)) {
-        dir2 = Vector2i(0, 0);
+    int curr_dist = 1;
+    Vector2i curr_pos = lv_pos + dir;
+
+    //check empty
+    if (!is_tile_empty_and_regular(get_lv_sid(curr_pos))) {
+        return nullptr;
     }
 
-    while (dist <= dist_to_lv_edge) {
+    //init next_dirs
+    uint16_t src_stuff_id = get_lv_sid(lv_pos);
+    uint8_t src_type_id = get_type_id(src_stuff_id);
+    uint8_t src_tile_id = get_tile_id(src_stuff_id);
+    bool horizontal = (H_DIRS.find(dir) != H_DIRS.end());
+    vector<tuple<Vector2i, bool, bool>> next_dirs; //next_dir, in_bounds, blocked (unused if next_dir == dir)
+    Vector2i perp_dir1 = horizontal ? Vector2i(0, 1) : Vector2i(1, 0);
+    Vector2i perp_dir2 = horizontal ? Vector2i(0, -1) : Vector2i(-1, 0);
+    for (Vector2i next_dir : {perp_dir1, perp_dir2}) {
+        if (!get_dist_to_lv_edge(next_dir)) {
+            next_dirs.emplace_back(next_dir, false, false);
+            continue;
+        }
+        uint16_t next_stuff_id = get_lv_sid(lv_pos + next_dir);
+        bool blocked = !(is_tile_unsigned_and_regular(next_stuff_id) && is_compatible(src_type_id, get_back_id(next_stuff_id)));
+        next_dirs.emplace_back(next_dir, true, blocked);
+    }
+    next_dirs.emplace_back(dir, curr_dist < dist_to_lv_edge, false);
+
+    while (curr_dist <= dist_to_lv_edge) {
         uint16_t curr_stuff_id = get_lv_sid(curr_pos);
 
-        if (!is_tile_unsigned_and_regular(curr_stuff_id)) {
-            return nullptr;
-        }
-        uint8_t curr_back_id = get_back_id(curr_stuff_id);
-        if (!is_compatible(agent_type_id, curr_back_id)) {
+        //check obstruction
+        if (!is_tile_empty_and_regular(curr_stuff_id) || !is_compatible(src_type_id, get_back_id(curr_stuff_id))) {
             return nullptr;
         }
 
-        //update zero_count
-        uint8_t curr_tile_id = get_tile_id(curr_stuff_id);
-        if (curr_tile_id == TileId::ZERO) {
-            ++zero_count;
-        }
+        //get current jump point
+        shared_ptr<SANode> curr_jp = get_jump_point(dir, curr_pos, curr_dist);
 
-        //get current jump point for secondary jump checking
-        shared_ptr<SANode> curr_jp = get_jump_point(dir, curr_pos, dist, zero_count);
+        //check lv_end
         if (curr_pos == lv_end) {
             return curr_jp;
         }
 
-        //remember to do bound checking
-        if (dir1 != Vector2i(0, 0)) {
-            Vector2i pos1 = curr_pos + dir1;
-            uint16_t stuff_id1 = get_lv_sid(pos1);
-            if (horizontal) {
-                bool dir1_blocked = !is_tile_empty_and_regular(stuff_id1);
-                if (dir1_blocked && is_tile_unsigned_and_regular(stuff_id1)) {
-                    return curr_jp;
-                }
+        //check for jump conditions
+        for (auto& [next_dir, in_bounds, blocked] : next_dirs) {
+            //bound check
+            if (!in_bounds) { //once false, in_bounds stays false
+                curr_jp->prune_action_ids(next_dir);
+                continue;
+            }
+
+            //update in_bounds
+            if (next_dir == dir) {
+                in_bounds = curr_dist + 1 < dist_to_lv_edge;
+            }
+
+            //compatibility check
+            uint16_t next_stuff_id = get_lv_sid(curr_pos + next_dir);
+            bool next_compatible = is_compatible(src_type_id, get_back_id(next_stuff_id));
+            bool next_empty_and_regular = is_tile_empty_and_regular(next_stuff_id);
+            if (!next_compatible) {
+                curr_jp->prune_action_ids(next_dir);
+                //update blocked
+                blocked = !(next_empty_and_regular && next_compatible);
+                continue;
+            }
+
+            //next empty check
+            if (next_dir == dir && next_empty_and_regular) {
+                continue;
+            }
+
+            //prune jump if horizontal, perp, and not blocked
+            if (horizontal && next_dir != dir && !blocked) {
+                curr_jp->neighbors[Vector3i(next_dir.x, next_dir.y, ActionId::JUMP)] = weak_ptr<SANode>();
+            }
+
+            //prune slide if empty, prune jump if not
+            if (next_empty_and_regular) {
+                curr_jp->neighbors[Vector3i(next_dir.x, next_dir.y, ActionId::SLIDE)] = weak_ptr<SANode>();
             }
             else {
-                shared_ptr<SANode> secondary_jp = curr_jp->jump(dir1, lv_end, allow_type_change);
-                if (secondary_jp) {
-                    curr_jp->jump_points[dir1] = secondary_jp;
-                    return curr_jp;
+                curr_jp->neighbors[Vector3i(next_dir.x, next_dir.y, ActionId::JUMP)] = weak_ptr<SANode>();
+            }
+
+            //horizontal perp empty check
+            if (horizontal && next_dir != dir && next_empty_and_regular && blocked) {
+                return curr_jp;
+            }
+
+            uint8_t next_type_id = get_type_id(next_stuff_id);
+            uint8_t next_tile_id = get_tile_id(next_stuff_id);
+
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::END; ++action_id) {
+                //store next_action result in curr_jp->neighbors and if valid, return curr_jp
+                //!(vertical && next_dir == dir && empty) bc "next empty check"
+                if (action_id == ActionId::JUMP && (horizontal || !next_empty_and_regular)) {
+                    continue;
+                }
+
+                Vector3i next_action = Vector3i(next_dir.x, next_dir.y, action_id);
+                shared_ptr<SANode> neighbor = curr_jp->try_action(next_action, lv_end, allow_type_change);
+                if (neighbor) {
+                    if (!horizontal || next_dir == dir || action_id != ActionId::SLIDE || blocked || neighbor->prev_push_count) {
+                        return curr_jp;
+                    }
                 }
             }
 
-
-            if (!horizontal && curr_jp->jump(dir1, lv_end)) {
-                return curr_jp;
-            }
-            else if (is_tile_unsigned_and_regular(stuff_id1)) {
-                return curr_jp;
-            }
-            uint8_t tile_id1 = get_tile_id(stuff_id1);
-            uint8_t type_id1 = get_type_id(stuff_id1);
-            //or src_tile_id splittable and get_splitted_tid(src_tile_id) is mergeable
-            if (is_ids_mergeable(src_tile_id, tile_id1) && is_type_preserved(agent_type_id, type_id1)) {
-                return curr_jp;
-            }
-        }
-        if (dir2 != Vector2i(0, 0)) {
-            Vector2i pos2 = curr_pos + dir2;
-            uint16_t stuff_id2 = get_lv_sid(pos2);
-            if (!horizontal && curr_jp->jump(dir2, lv_end)) {
-                return curr_jp;
-            }
-            else if (is_tile_unsigned_and_regular(stuff_id2)) {
-                return curr_jp;
-            }
-            uint8_t tile_id2 = get_tile_id(stuff_id2);
-            uint8_t type_id2 = get_type_id(stuff_id2);
-            if (is_ids_mergeable(src_tile_id, tile_id2) && is_type_preserved(agent_type_id, type_id2)) {
-                return curr_jp;
-            }
-        }
-        if (dist < dist_to_lv_edge) {
-            Vector2i next_pos = curr_pos + dir;
-            uint16_t next_stuff_id = get_lv_sid(next_pos);
-            uint8_t next_tile_id = get_tile_id(next_stuff_id);
-            uint8_t next_type_id = get_type_id(next_stuff_id);
-            if (!is_tile_unsigned_and_regular(next_stuff_id) && is_ids_mergeable(src_tile_id, next_tile_id) && is_type_preserved(agent_type_id, next_type_id)) {
-                return curr_jp;
-            }
+            //update blocked
+            blocked = !(next_empty_and_regular && next_compatible);
         }
 
         curr_pos += dir;
-        ++dist;
+        ++curr_dist;
     }
+
     return nullptr;
 }
 
 //assume jp_pos is within bounds
 //doesn't update f/g/h
-//zero_count is number of zeros (all regular) from lv_pos+dir to jp_pos inclusive
-shared_ptr<SANode> SANode::get_jump_point(Vector2i dir, Vector2i jp_pos, int jump_dist, int zero_count) {
+shared_ptr<SANode> SANode::get_jump_point(Vector2i dir, Vector2i jp_pos, int jump_dist) {
     shared_ptr<SANode> ans = make_shared<SANode>(*this);
     ans->set_lv_pos(jp_pos);
-    ans->set_lv_sid(jp_pos, get_moved_stuff_id(get_lv_sid(lv_pos), get_lv_sid(jp_pos)));
-    //clear src sid and zeros in path of jump
-    for (Vector2i pos=lv_pos; pos != jp_pos; pos += dir) {
-        ans->clear_lv_sid(pos);
-    }
-    //add pushed zeros ahead of jp
-    int dist_to_lv_edge = ans->get_dist_to_lv_edge(dir);
-    int dist = 1;
-    Vector2i curr_pos = jp_pos + dir;
-    int max_dist = min(dist_to_lv_edge, zero_count, tile_push_limit);
-    while (dist <= max_dist) {
-        uint16_t curr_stuff_id = ans->get_lv_sid(curr_pos);
-        uint8_t curr_back_id = get_back_id(curr_stuff_id);
-        if (!is_compatible(TypeId::REGULAR, curr_back_id)) {
-            break;
-        }
-        uint8_t curr_type_id = get_type_id(curr_stuff_id);
+    ans->set_lv_sid(jp_pos, get_jumped_stuff_id(get_lv_sid(lv_pos), get_lv_sid(jp_pos)));
+    ans->clear_lv_sid(lv_pos);
 
-        if (curr_type_id == TypeId::REGULAR) {
-            uint8_t curr_tile_id = get_tile_id(curr_stuff_id);
-
-            if (curr_tile_id == TileId::EMPTY) {
-                ans->set_lv_sid(curr_pos, ans->get_lv_sid(curr_pos) + TileId::ZERO);
-            }
-            else if (curr_tile_id == TileId::ZERO) {
-                ++zero_count;
-                max_dist = min(dist_to_lv_edge, zero_count, tile_push_limit);
-            }
-            else {
-                break;
-            }
-        }
-        else {
-            break;
-        }
-        ++dist;
-        curr_pos += dir;
-    }
+    //prev stuff
     Vector3i action = Vector3i(dir.x, dir.y, ActionId::SLIDE);
     ans->prev_actions = vector<Vector3i>(jump_dist, action);
     ans->prev = shared_from_this();
-    //skip slide if -dir and prev slide merged with empty or prev split merged with empty
-    //skip split if -dir and prev slide merged with same sign regular or prev split merged with same sign regular
-    ans->prev_merged_empty = zero_count == 0;
-    ans->prev_merged_ssr = false;
+    ans->prev_push_count = 0;
+
+    //prune stuff
+    ans->neighbors[Vector3i(-dir.x, -dir.y, ActionId::SLIDE)] = weak_ptr<SANode>();
+    ans->neighbors[Vector3i(-dir.x, -dir.y, ActionId::JUMP)] = weak_ptr<SANode>();
+
     return ans;
+}
+
+//prune all actions in dir
+void SANode::prune_action_ids(Vector2i dir) {
+    for (int action_id=ActionId::SLIDE; action_id != ActionId::END; ++action_id) {
+        neighbors[Vector3i(dir.x, dir.y, action_id)] = weak_ptr<SANode>();
+    }
 }
 
 Array Pathfinder::pathfind(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
@@ -527,26 +549,11 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
         closed.insert(curr);
 
         for (Vector2i dir : DIRECTIONS) {
-            Vector3i last_action = curr->prev_actions.back();
-            bool dir_is_backtrack = (dir == -Vector2i(last_action.x, last_action.y));
-
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::END; ++action_id) {
-                //THESE NEED PROFILING
-                //skip slide if -dir and prev slide merged with empty or prev split merged with empty
-	            //skip split if -dir and prev slide merged with same sign regular or prev split merged with same sign regular
-                if (dir_is_backtrack) {
-                    if (action_id == ActionId::SLIDE && curr->prev_merged_empty) {
-                        continue;
-                    }
-                    if (action_id == ActionId::SPLIT && curr->prev_merged_ssr) {
-                        continue;
-                    }
-                }
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i action(dir.x, dir.y, action_id);
-                shared_ptr<SANode> neighbor = curr->try_action(action, false); //don't allow type change
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
 
-                //check if action possible
-                if (neighbor == nullptr) {
+                if (!neighbor) {
                     continue;
                 }
 
@@ -604,28 +611,31 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
         closed.insert(curr);
 
         for (Vector2i dir : DIRECTIONS) {
-            Vector3i last_action = curr->prev_actions.back();
-            bool dir_is_backtrack = (dir == -Vector2i(last_action.x, last_action.y));
-
             for (int action_id=ActionId::SLIDE; action_id != ActionId::END; ++action_id) {
-                //skip slide if -dir and prev slide merged with empty or prev split merged with empty
-	            //skip split if -dir and prev slide merged with same sign regular or prev split merged with same sign regular
-                if (dir_is_backtrack) {
-                    if (action_id == ActionId::SLIDE && curr->prev_merged_empty) {
-                        continue;
-                    }
-                    if (action_id == ActionId::SPLIT && curr->prev_merged_ssr) {
-                        continue;
-                    }
-                }
+                //expand split in all dirs, expand slide iff next tile isn't unsigned_and_regular
+                //expand jump iff next tile is unsigned_and_regular and dir is natural - handled in jump()
+                //only search in dir of natural neighbors (except first node) - handled via pruning
+                Vector3i action = Vector3i(dir.x, dir.y, action_id);
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
 
-                if (action_id == ActionId::SLIDE) {
-                    //only search in dir of natural neighbors (add exception for first node)
-                    if (curr->get_lv_sid(curr->lv_pos + dir))
+                if (!neighbor) {
+                    continue;
                 }
+                if (closed.find(neighbor) != closed.end()) {
+                    continue;
+                }
+                neighbor->f += neighbor->prev_actions.size();
+
+                auto it = best_dists.find(neighbor->hash);
+                if (it != best_dists.end() && (*it).second <= neighbor->f) {
+                    continue;
+                }
+                open.push(neighbor);
+                best_dists[neighbor->hash] = neighbor->f;
             }  
         }
     }
+    return Array();
 }
 
 Array Pathfinder::pathfind_sa_astar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
@@ -774,13 +784,13 @@ bool Pathfinder::rrd_resume(uint8_t agent_type_id, Vector2i goal_pos, Vector2i n
 }
 
 int Pathfinder::get_move_abs_dist(uint8_t src_tile_id, uint8_t dest_tile_id) {
-    if (dest_tile_id % TileId::ZERO == 0) {
+    if (is_tile_unsigned(dest_tile_id)) {
         return 1;
     }
-    if (src_tile_id % TileId::ZERO == 0) {
+    if (is_tile_unsigned(src_tile_id)) {
         return get_sep_abs_dist(TileId::ZERO, dest_tile_id);
     }
-    if (get_tile_pow(dest_tile_id) == TILE_POW_MAX) {
+    if (get_signed_tile_pow(dest_tile_id) == TILE_POW_MAX) {
         return min(get_sep_abs_dist(src_tile_id, TileId::ZERO), get_sep_abs_dist(src_tile_id, get_opposite_tile_id(dest_tile_id)));
     }
     return get_sep_abs_dist(src_tile_id, dest_tile_id);
@@ -888,14 +898,17 @@ bool is_ids_mergeable(uint8_t tile_id1, uint8_t tile_id2) {
     if (is_tile_unsigned(tile_id1) || is_tile_unsigned(tile_id2)) {
         return true;
     }
-    Vector2i ps1 = tid_to_ps(tile_id1);
-    Vector2i ps2 = tid_to_ps(tile_id2);
-    return is_pow_signs_mergeable(ps1, ps2);
+    int pow1 = get_signed_tile_pow(tile_id1);
+    return pow1 == get_signed_tile_pow(tile_id2) && (pow1 < TILE_POW_MAX || get_tile_sign(tile_id1) != get_tile_sign(tile_id2));
+}
+
+bool is_ids_split_mergeable(uint8_t src_tile_id, uint8_t dest_tile_id) {
+    return is_pow_splittable(get_tile_pow(src_tile_id)) && is_ids_mergeable(get_splitted_tid(src_tile_id), dest_tile_id);
 }
 
 //merges involving TileId::ZERO/EMPTY do not count
 bool is_same_sign_merge(uint8_t tile_id1, uint8_t tile_id2) {
-    return !is_tile_unsigned(tile_id1) && tile_id1 == tile_id2 && get_tile_pow(tile_id1) < TILE_POW_MAX;
+    return !is_tile_unsigned(tile_id1) && tile_id1 == tile_id2 && get_signed_tile_pow(tile_id1) < TILE_POW_MAX;
 }
 
 bool is_tile_unsigned(uint8_t tile_id) {
@@ -914,10 +927,7 @@ bool is_pow_signs_mergeable(Vector2i ps1, Vector2i ps2) {
     if (ps1.x == -1 || ps2.x == -1) {
         return true;
     }
-    if (ps1.x == ps2.x && (ps1.x < TILE_POW_MAX || ps1.y != ps2.y)) {
-        return true;
-    }
-    return false;
+    return ps1.x == ps2.x && (ps1.x < TILE_POW_MAX || ps1.y != ps2.y);
 }
 
 bool is_pow_splittable(int pow) {
@@ -937,7 +947,7 @@ bool is_type_preserved(uint8_t src_type_id, uint8_t dest_type_id) {
 }
 
 //assume type_ids valid
-//equivalent to !is_type_preserved(dest_type_id, src_type_id), but faster
+//equivalent to !is_type_preserved(dest_type_id, src_type_id)
 bool is_type_dominant(uint8_t src_type_id, uint8_t dest_type_id) {
     return MERGE_PRIORITIES.at(src_type_id) > MERGE_PRIORITIES.at(dest_type_id);
 }
@@ -960,6 +970,11 @@ int get_tile_pow(uint8_t tile_id) {
     if (tile_id == TileId::EMPTY) {
         return -1;
     }
+    return get_signed_tile_pow(tile_id);
+}
+
+//assume tile_id is signed
+int get_signed_tile_pow(uint8_t tile_id) {
     return abs(tile_id - TileId::ZERO) - 1;
 }
 
@@ -1014,12 +1029,9 @@ uint16_t get_merged_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id) {
     return back_bits + type_bits + tile_bits;
 }
 
-//get_merged_stuff_id but assuming dest is regular zero or empty
-uint16_t get_moved_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id) {
-    uint16_t back_bits = get_back_bits(dest_stuff_id);
-    uint16_t type_bits = get_type_bits(src_stuff_id);
-    uint16_t tile_bits = get_tile_id(src_stuff_id);
-    return back_bits + type_bits + tile_bits;
+//get_merged_stuff_id but assuming dest is empty_and_regular
+uint16_t get_jumped_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id) {
+    return get_back_bits(dest_stuff_id) + remove_back_id(src_stuff_id);
 }
 
 //assumes merge possible
