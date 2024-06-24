@@ -442,9 +442,6 @@ shared_ptr<SANode> SANode::try_jump(Vector2i dir, Vector2i lv_end, bool allow_ty
                 return curr_jp;
             }
 
-            uint8_t next_type_id = get_type_id(next_stuff_id);
-            uint8_t next_tile_id = get_tile_id(next_stuff_id);
-
             for (int action_id=ActionId::SLIDE; action_id != ActionId::END; ++action_id) {
                 //store next_action result in curr_jp->neighbors and if valid, return curr_jp
                 //!(vertical && next_dir == dir && empty) bc "next empty check"
