@@ -27,7 +27,6 @@ void Pathfinder::_bind_methods() {
 }
 
 Array SANode::trace_path(int path_len) {
-    UtilityFunctions::print("trace_path", path_len);
 	Array ans;
 	ans.resize(path_len);
 	int index = path_len - 1;
@@ -40,7 +39,7 @@ Array SANode::trace_path(int path_len) {
         }
 		curr = curr->prev;
 	}
-	//UtilityFunctions::print("PF TRACED PATH SIZE: ", ans.size());
+	UtilityFunctions::print("PF TRACED PATH SIZE: ", ans.size());
 	return ans;
 }
 
@@ -322,6 +321,7 @@ shared_ptr<SANode> SANode::try_action(Vector3i action, Vector2i lv_end, bool all
             break;
         case ActionId::JUMP:
             ans = try_jump(dir, lv_end, allow_type_change);
+            break;
         default:
             ans = try_slide(dir, allow_type_change);
     }
@@ -562,6 +562,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
                 if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
+                assert(neighbor->f == curr->f);
                 ++(neighbor->f); //update f/g/h in pathfind funcs bc they could be used differently in each func
 
                 //check if neighbor has been expanded with shorter dist
@@ -621,6 +622,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
                 if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
+                assert(neighbor->f == curr->f);
                 neighbor->f += neighbor->prev_actions.size();
 
                 auto it = best_dists.find(neighbor->hash);
