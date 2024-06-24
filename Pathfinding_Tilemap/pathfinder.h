@@ -126,8 +126,9 @@ struct SANode : public enable_shared_from_this<SANode> {
     shared_ptr<SANode> prev = nullptr;
     int prev_push_count = 0;
     //to store intermediate results/prevent backtracking
-    //nullptr indicates neighbor is either pruned or invalid
-    unordered_map<Vector3i, weak_ptr<SANode>, ActionHasher> neighbors; //action, SANode
+    //action, {pruned (or invalid), weak_ptr}
+    //nullptr indicates neighbor expired
+    unordered_map<Vector3i, pair<bool, weak_ptr<SANode>>, ActionHasher> neighbors;
 
 
     Array trace_path(int path_len);
@@ -191,7 +192,7 @@ private:
     Vector2i player_pos;
     Vector2i player_last_dir;
     //GDScript* GV;
-    unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> abstract_dists; //goal_pos, [open, closed]; assume all entries are actively used
+    unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> abstract_dists; //goal_pos, {open, closed}; assume all entries are actively used
 
 protected:
     static void _bind_methods();

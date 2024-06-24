@@ -27,6 +27,7 @@ void Pathfinder::_bind_methods() {
 }
 
 Array SANode::trace_path(int path_len) {
+    UtilityFunctions::print("trace_path", path_len);
 	Array ans;
 	ans.resize(path_len);
 	int index = path_len - 1;
@@ -230,10 +231,10 @@ void SANode::perform_slide(Vector2i dir, int push_count) {
     uint8_t neighbor_tile_id = get_tile_id(neighbor_sid);
     uint8_t neighbor_type_id = get_type_id(neighbor_sid);
     if (is_tile_empty_and_regular(neighbor_sid)) {
-        neighbors[Vector3i(-dir.x, -dir.y, ActionId::SLIDE)] = weak_ptr<SANode>();
+        neighbors[Vector3i(-dir.x, -dir.y, ActionId::SLIDE)] = {true, weak_ptr<SANode>()};
     }
     if (is_same_sign_merge(src_tile_id, neighbor_tile_id) && neighbor_type_id == TypeId::REGULAR) {
-        neighbors[Vector3i(-dir.x, -dir.y, ActionId::SPLIT)] = weak_ptr<SANode>();
+        neighbors[Vector3i(-dir.x, -dir.y, ActionId::SPLIT)] = {true, weak_ptr<SANode>()};
     }
 
     for (int dist_to_merge=0; dist_to_merge <= push_count; ++dist_to_merge) {
@@ -260,6 +261,7 @@ shared_ptr<SANode> SANode::try_slide(Vector2i dir, bool allow_type_change) {
     int push_count = get_slide_push_count(dir, allow_type_change);
     if (push_count != -1) {
         shared_ptr<SANode> m = make_shared<SANode>(*this);
+        m->neighbors.clear();
         m->perform_slide(dir, push_count);
         m->prev_push_count = push_count;
         return m;
@@ -293,14 +295,21 @@ shared_ptr<SANode> SANode::try_split(Vector2i dir, bool allow_type_change) {
 }
 
 //updates prev, prev_actions
-//doesn't update f/g/h
 //stores results
 shared_ptr<SANode> SANode::try_action(Vector3i action, Vector2i lv_end, bool allow_type_change) {
     //check for stored neighbor
     Vector2i dir(action.x, action.y);
     auto it = neighbors.find(action);
     if (it != neighbors.end()) {
-        return (*it).second.lock();
+        if ((*it).second.first) {
+            //pruned or action invalid
+            return nullptr;
+        }
+        shared_ptr<SANode> ans = (*it).second.second.lock();
+        if (ans) {
+            //not expired
+            return ans;
+        }
     }
 
     shared_ptr<SANode> ans;
@@ -323,27 +332,21 @@ shared_ptr<SANode> SANode::try_action(Vector3i action, Vector2i lv_end, bool all
             ans->prev_actions = {action};
         }
         //update neighbors
-        neighbors[action] = ans;
+        neighbors[action] = {false, ans};
     }
     else {
-        neighbors[action] = weak_ptr<SANode>();
+        //action invalid
+        neighbors[action] = {true, weak_ptr<SANode>()};
     }
     return ans;
 }
 
-//doesn't update f/g/h
 //get_jump_point() correctly inits prev_push_count to 0
 //doesn't change agent type/tile_id
 //doesn't split or push/merge any signed_or_regular tiles
 //see Devlog/jump_conditions for details
 //when expanding a jp, expand split in all dirs, expand slide iff next tile isn't unsigned_and_regular
 shared_ptr<SANode> SANode::try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change) {
-    //check for stored neighbor
-    auto it = neighbors.find(Vector3i(dir.x, dir.y, ActionId::JUMP));
-    if (it != neighbors.end()) {
-        return (*it).second.lock();
-    }
-
     //check bound
     int dist_to_lv_edge = get_dist_to_lv_edge(dir);
     if (!dist_to_lv_edge) {
@@ -423,15 +426,15 @@ shared_ptr<SANode> SANode::try_jump(Vector2i dir, Vector2i lv_end, bool allow_ty
 
             //prune jump if horizontal, perp, and not blocked
             if (horizontal && next_dir != dir && !blocked) {
-                curr_jp->neighbors[Vector3i(next_dir.x, next_dir.y, ActionId::JUMP)] = weak_ptr<SANode>();
+                curr_jp->neighbors[Vector3i(next_dir.x, next_dir.y, ActionId::JUMP)] = {true, weak_ptr<SANode>()};
             }
 
             //prune slide if empty, prune jump if not
             if (next_empty_and_regular) {
-                curr_jp->neighbors[Vector3i(next_dir.x, next_dir.y, ActionId::SLIDE)] = weak_ptr<SANode>();
+                curr_jp->neighbors[Vector3i(next_dir.x, next_dir.y, ActionId::SLIDE)] = {true, weak_ptr<SANode>()};
             }
             else {
-                curr_jp->neighbors[Vector3i(next_dir.x, next_dir.y, ActionId::JUMP)] = weak_ptr<SANode>();
+                curr_jp->neighbors[Vector3i(next_dir.x, next_dir.y, ActionId::JUMP)] = {true, weak_ptr<SANode>()};
             }
 
             //horizontal perp empty check
@@ -470,9 +473,9 @@ shared_ptr<SANode> SANode::try_jump(Vector2i dir, Vector2i lv_end, bool allow_ty
 }
 
 //assume jp_pos is within bounds
-//doesn't update f/g/h
 shared_ptr<SANode> SANode::get_jump_point(Vector2i dir, Vector2i jp_pos, int jump_dist) {
     shared_ptr<SANode> ans = make_shared<SANode>(*this);
+    ans->neighbors.clear();
     ans->set_lv_pos(jp_pos);
     ans->set_lv_sid(jp_pos, get_jumped_stuff_id(get_lv_sid(lv_pos), get_lv_sid(jp_pos)));
     ans->clear_lv_sid(lv_pos);
@@ -484,8 +487,8 @@ shared_ptr<SANode> SANode::get_jump_point(Vector2i dir, Vector2i jp_pos, int jum
     ans->prev_push_count = 0;
 
     //prune stuff
-    ans->neighbors[Vector3i(-dir.x, -dir.y, ActionId::SLIDE)] = weak_ptr<SANode>();
-    ans->neighbors[Vector3i(-dir.x, -dir.y, ActionId::JUMP)] = weak_ptr<SANode>();
+    ans->neighbors[Vector3i(-dir.x, -dir.y, ActionId::SLIDE)] = {true, weak_ptr<SANode>()};
+    ans->neighbors[Vector3i(-dir.x, -dir.y, ActionId::JUMP)] = {true, weak_ptr<SANode>()};
 
     return ans;
 }
@@ -493,7 +496,7 @@ shared_ptr<SANode> SANode::get_jump_point(Vector2i dir, Vector2i jp_pos, int jum
 //prune all actions in dir
 void SANode::prune_action_ids(Vector2i dir) {
     for (int action_id=ActionId::SLIDE; action_id != ActionId::END; ++action_id) {
-        neighbors[Vector3i(dir.x, dir.y, action_id)] = weak_ptr<SANode>();
+        neighbors[Vector3i(dir.x, dir.y, action_id)] = {true, weak_ptr<SANode>()};
     }
 }
 
@@ -559,7 +562,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
                 if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
-                ++(neighbor->f);
+                ++(neighbor->f); //update f/g/h in pathfind funcs bc they could be used differently in each func
 
                 //check if neighbor has been expanded with shorter dist
                 auto it = best_dists.find(neighbor->hash);
