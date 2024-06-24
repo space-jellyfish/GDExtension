@@ -24,10 +24,6 @@ void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_tile_push_limit", "tpl"), &Pathfinder::set_tile_push_limit);
     ClassDB::bind_method(D_METHOD("generate_hash_keys"), &Pathfinder::generate_hash_keys);
     ClassDB::bind_method(D_METHOD("pathfind", "search_id", "max_depth", "min", "max", "start", "end"), &Pathfinder::pathfind);
-
-    //testing
-    ClassDB::bind_method(D_METHOD("rrd_init", "agent_type_id", "goal_pos"), &Pathfinder::rrd_init);
-    ClassDB::bind_method(D_METHOD("rrd_resume", "agent_type_id", "goal_pos", "node_pos"), &Pathfinder::rrd_resume);
 }
 
 Array SANode::trace_path(int path_len) {
@@ -96,12 +92,9 @@ void SANode::init_lv(Vector2i min, Vector2i max, Vector2i agent_pos)  {
             }
             row.push_back(stuff_id);
 
-            
             if (tile_id > TileId::EMPTY) {
                 hash ^= tile_id_hash_keys[y][x][tile_id-1];
             }
-            
-            uint8_t type_id = get_type_id(stuff_id);
             if (type_id < TypeId::REGULAR) {
                 hash ^= type_id_hash_keys[y][x][type_id];
             }
@@ -339,7 +332,7 @@ shared_ptr<SANode> SANode::try_action(Vector3i action, Vector2i lv_end, bool all
 }
 
 //doesn't update f/g/h
-//get_jump_point() correctly inits push_count to 0
+//get_jump_point() correctly inits prev_push_count to 0
 //doesn't change agent type/tile_id
 //doesn't split or push/merge any signed_or_regular tiles
 //see Devlog/jump_conditions for details
@@ -530,6 +523,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
     shared_ptr<SANode> first = make_shared<SANode>();
     first->init_lv_pos(start - min);
     first->init_lv(min, max, start);
+    //first can have prev_actions and prev_push_count uninitialized
     open.push(first);
     best_dists[first->hash] = first->f;
 

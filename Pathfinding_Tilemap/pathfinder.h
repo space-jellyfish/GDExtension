@@ -96,13 +96,24 @@ struct AbstractNodeComparer {
 };
 
 struct Vector2iHasher {
-    size_t operator() (const Vector2i v) const {
+    size_t operator() (const Vector2i& v) const {
         size_t hash_x = hash<int32_t>{}(v.x);
         size_t hash_y = hash<int32_t>{}(v.y);
         return hash_x ^ (hash_y + 0x9e3779b9 + (hash_x << 6) + (hash_x >> 2));
     }
 };
 
+struct DirHasher {
+    size_t operator() (const Vector2i& dir) const {
+        return (3 * dir.x + dir.y + 3) >> 1;
+    }
+};
+
+struct ActionHasher {
+    size_t operator() (const Vector3i& action) const {
+        return ((3 * action.x + action.y + 3) >> 1) + (action.z << 2);
+    }
+};
 
 struct SANode : public enable_shared_from_this<SANode> {
     Vector2i lv_pos;
@@ -111,12 +122,12 @@ struct SANode : public enable_shared_from_this<SANode> {
     //for fast equality check
     size_t hash;
     //for backtracing
-    vector<Vector3i> prev_actions = {Vector3i(0, 0, 0)};
+    vector<Vector3i> prev_actions;
     shared_ptr<SANode> prev = nullptr;
     int prev_push_count = 0;
     //to store intermediate results/prevent backtracking
     //nullptr indicates neighbor is either pruned or invalid
-    unordered_map<Vector3i, weak_ptr<SANode>> neighbors; //action, SANode
+    unordered_map<Vector3i, weak_ptr<SANode>, ActionHasher> neighbors; //action, SANode
 
 
     Array trace_path(int path_len);
@@ -213,9 +224,9 @@ public:
 const unordered_set<uint8_t> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
 const unordered_set<uint8_t> B_SAVE_OR_GOAL = {BackId::SAVEPOINT, BackId::GOAL};
 const unordered_set<uint8_t> T_ENEMY = {TypeId::INVINCIBLE, TypeId::HOSTILE, TypeId::VOID};
-const unordered_set<Vector2i> DIRECTIONS = {Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)};
-const unordered_set<Vector2i> H_DIRS = {Vector2i(1, 0), Vector2i(-1, 0)};
-const unordered_set<Vector2i> V_DIRS = {Vector2i(0, 1), Vector2i(0, -1)};
+const unordered_set<Vector2i, DirHasher> DIRECTIONS = {Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)};
+const unordered_set<Vector2i, DirHasher> H_DIRS = {Vector2i(1, 0), Vector2i(-1, 0)};
+const unordered_set<Vector2i, DirHasher> V_DIRS = {Vector2i(0, 1), Vector2i(0, -1)};
 const unordered_map<uint8_t, int> MERGE_PRIORITIES = {{TypeId::PLAYER, 1}, {TypeId::INVINCIBLE, 3}, {TypeId::HOSTILE, 2}, {TypeId::VOID, 4}, {TypeId::REGULAR, 0}};
 const int TILE_POW_MAX = 14;
 const int ABSTRACT_DIST_SIGN_CHANGE_PENALTY = 2;
