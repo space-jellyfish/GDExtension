@@ -16,6 +16,7 @@ array<array<array<size_t, TypeId::REGULAR>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT
 array<array<size_t, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> agent_pos_hash_keys;
 TileMap* cells;
 int tile_push_limit;
+unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> abstract_dists;
 
 void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_player_pos", "pos"), &Pathfinder::set_player_pos);
@@ -23,7 +24,7 @@ void Pathfinder::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_tilemap", "t"), &Pathfinder::set_tilemap);
     ClassDB::bind_method(D_METHOD("set_tile_push_limit", "tpl"), &Pathfinder::set_tile_push_limit);
     ClassDB::bind_method(D_METHOD("generate_hash_keys"), &Pathfinder::generate_hash_keys);
-    ClassDB::bind_method(D_METHOD("pathfind", "search_id", "max_depth", "min", "max", "start", "end"), &Pathfinder::pathfind);
+    ClassDB::bind_method(D_METHOD("pathfind_sa", "search_id", "max_depth", "min", "max", "start", "end"), &Pathfinder::pathfind_sa);
 }
 
 Array SANode::trace_path(int path_len) {
@@ -497,27 +498,29 @@ void SANode::prune_action_ids(Vector2i dir) {
     }
 }
 
-Array Pathfinder::pathfind(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     switch (search_id) {
         case SearchId::DIJKSTRA:
             return pathfind_sa_dijkstra(max_depth, min, max, start, end);
         case SearchId::HBJPD:
             return pathfind_sa_hbjpd(max_depth, min, max, start, end);
-        case SearchId::ASTAR:
-            return pathfind_sa_astar(max_depth, min, max, start, end);
-        case SearchId::IDASTAR:
-            return pathfind_sa_idastar(max_depth, min, max, start, end);
+        case SearchId::MDA:
+            return pathfind_sa_mda(max_depth, min, max, start, end);
         default:
-            return pathfind_sa_idastar(max_depth, min, max, start, end);
+            return pathfind_sa_hbjpd(max_depth, min, max, start, end);
     }
 }
 
 //assume no type_id change allowed
 //open nodes are optimal since edges are unit cost
+//closed nodes are optimal bc dijkstra
 Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
+    //change to unordered_set<LightweightSANode> for less memory usage but no collision checking,
+    //where LightweightSANode only stores hash (for KeyEqual) and prev/prev_actions (for trace_path())
     unordered_set<shared_ptr<SANode>, SANodeHashGetter, SANodeEquator> closed;
-    unordered_map<size_t, int> best_dists;
+    //to prevent duplicate nodes with equal or worse cost from being pushed to open
+    unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists;
     Vector2i lv_end = end - min;
 
     shared_ptr<SANode> first = make_shared<SANode>();
@@ -525,7 +528,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
     first->init_lv(min, max, start);
     //first can have prev_actions and prev_push_count uninitialized
     open.push(first);
-    best_dists[first->hash] = first->f;
+    best_dists[first] = first->f;
 
     while (!open.empty()) {
         shared_ptr<SANode> curr = open.top();
@@ -533,13 +536,12 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
         if (curr->f > max_depth) {
             return Array();
         }
-        //closed check is unnecessary bc open doesn’t receive duplicate nodes
-        assert(closed.find(curr) == closed.end());
-
         if (curr->lv_pos == lv_end) {
             return curr->trace_path(curr->f);
         }
+        //closed check is unnecessary bc open doesn’t receive duplicate nodes
         open.pop();
+        assert(closed.find(curr) == closed.end());
         closed.insert(curr);
 
         for (Vector2i dir : DIRECTIONS) {
@@ -559,16 +561,16 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
                 if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
-                assert(neighbor->f == curr->f);
+                assert(neighbor->f == curr->f); //every node expanded at most once, so there is no double-increment
                 ++(neighbor->f); //update f/g/h in pathfind funcs bc they could be used differently in each func
 
                 //check if neighbor has been expanded with shorter dist
-                auto it = best_dists.find(neighbor->hash);
+                auto it = best_dists.find(neighbor);
                 if (it != best_dists.end() && (*it).second <= neighbor->f) {
                     continue;
                 }
                 open.push(neighbor);
-                best_dists[neighbor->hash] = neighbor->f;
+                best_dists[neighbor] = neighbor->f;
             }
         }
     }
@@ -580,14 +582,14 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
 Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
     unordered_set<shared_ptr<SANode>, SANodeHashGetter, SANodeEquator> closed;
-    unordered_map<size_t, int> best_dists;
+    unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists;
     Vector2i lv_end = end - min;
 
     shared_ptr<SANode> first = make_shared<SANode>();
     first->init_lv_pos(start - min);
     first->init_lv(min, max, start);
     open.push(first);
-    best_dists[first->hash] = first->f;
+    best_dists[first] = first->f;
 
     while (!open.empty()) {
         shared_ptr<SANode> curr = open.top();
@@ -599,10 +601,10 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
             return curr->trace_path(curr->f);
         }
         //open may receive duplicate nodes (see Pictures/jpd_edge_case)
+        open.pop();
         if (closed.find(curr) != closed.end()) {
             continue;
         }
-        open.pop();
         closed.insert(curr);
 
         for (Vector2i dir : DIRECTIONS) {
@@ -619,47 +621,80 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
                 if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
-                assert(neighbor->f == curr->f);
                 neighbor->f += neighbor->prev_actions.size();
 
-                auto it = best_dists.find(neighbor->hash);
+                auto it = best_dists.find(neighbor);
                 if (it != best_dists.end() && (*it).second <= neighbor->f) {
                     continue;
                 }
                 open.push(neighbor);
-                best_dists[neighbor->hash] = neighbor->f;
+                best_dists[neighbor] = neighbor->f;
             }  
         }
     }
     return Array();
 }
 
-Array Pathfinder::pathfind_sa_astar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    //if (dist to player > threshold) {
-    //    astar using abstract dist
-    //}
-    //else {
-    //    obstruct one of four player dirs or attempt merge with player
-    //}
-    Array ans;
-    return ans;
-}
+//open not necessarily optimal
+//closed optimal bc heuristic consistent (see SA lec5)
+Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
+    unordered_set<shared_ptr<SANode>, SANodeHashGetter, SANodeEquator> closed;
+    unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+    Vector2i lv_end = end - min;
 
-Array Pathfinder::pathfind_sa_idastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    Array ans;
-    return ans;
-}
+    shared_ptr<SANode> first = make_shared<SANode>();
+    first->init_lv_pos(start - min);
+    first->init_lv(min, max, start);
+    first->h = manhattan_dist(first->lv_pos, lv_end);
+    first->f = first->h;
+    //first can have prev_actions and prev_push_count uninitialized
+    open.push(first);
+    best_dists[first] = first->g;
 
-Array Pathfinder::pathfind_sa_rrdastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    while (!open.empty()) {
+        shared_ptr<SANode> curr = open.top();
 
-}
+        if (curr->f > max_depth) { //final path_len is at least curr->f
+            return Array();
+        }
+        if (curr->lv_pos == lv_end) {
+            return curr->trace_path(curr->g);
+        }
+        //open may receive duplicate nodes (see Pictures/mda_closed_check_is_necessary)
+        open.pop();
+        if (closed.find(curr) != closed.end()) {
+            continue;
+        }
+        closed.insert(curr);
 
-Array Pathfinder::pathfind_sa_ididjpastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    int tile_depth = 0; //maybe rename to env_depth
-    int search_depth = 0;
+        for (Vector2i dir : DIRECTIONS) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
+                Vector3i action(dir.x, dir.y, action_id);
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
 
-    Array ans;
-    return ans;
+                if (!neighbor) {
+                    continue;
+                }
+
+                //check if neighbor closed (see Pictures/mda_closed_check_is_necessary)
+                if (closed.find(neighbor) != closed.end()) {
+                    continue;
+                }
+                ++(neighbor->g);
+
+                auto it = best_dists.find(neighbor);
+                if (it != best_dists.end() && (*it).second <= neighbor->g) {
+                    continue;
+                }
+                neighbor->h = manhattan_dist(neighbor->lv_pos, lv_end);
+                neighbor->f = neighbor->g + neighbor->h;
+                open.push(neighbor);
+                best_dists[neighbor] = neighbor->g;
+            }
+        }
+    }
+    return Array();
 }
 
 void Pathfinder::set_player_pos(Vector2i pos) {
@@ -713,107 +748,6 @@ bool Pathfinder::is_tile(Vector2i pos) {
 
 bool Pathfinder::is_immediately_trapped(Vector2i pos) {
     return false;
-}
-
-void Pathfinder::rrd_init(uint8_t agent_type_id, Vector2i goal_pos) {
-    if (abstract_dists.find(goal_pos) != abstract_dists.end()) {
-        return;
-    }
-
-    pq open;
-    um closed;
-    pair<pq, um> lists {open, closed};
-
-    if (is_compatible(agent_type_id, get_back_id(goal_pos))) {
-        AbstractNode n(goal_pos, 0);
-        open.push(n);
-    }
-
-    abstract_dists[goal_pos] = lists;
-}
-
-bool Pathfinder::rrd_resume(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
-    if (!is_compatible(agent_type_id, get_back_id(node_pos)) || !is_compatible(agent_type_id, get_back_id(goal_pos))) {
-        return false;
-    }
-
-    pair<pq, um>& lists = abstract_dists[goal_pos];
-    pq& open = lists.first;
-    um& closed = lists.second;
-
-    if (closed.find(node_pos) != closed.end()) {
-        return true;
-    }
-
-    while (!open.empty()) {
-        AbstractNode n = open.top();
-
-        if (closed.find(n.pos) != closed.end()) { //don't re-expand
-            assert(n.pos != node_pos);
-            continue;
-        }
-        closed[n.pos] = n.g;
-
-        if (n.pos == node_pos) {
-            //found optimal abs_dist at node
-            //no need to backtrack so parents aren't stored
-            //don't pop n so search is resumable
-            //add to closed so get_abs_dist() can access n.g
-            return true;
-        }
-        open.pop();
-
-        uint8_t curr_tile_id = get_tile_id(n.pos);
-        for (Vector2i dir : DIRECTIONS) {
-            Vector2i next_pos = n.pos + dir;
-
-            if (closed.find(next_pos) != closed.end()) { //closed is all optimal
-                continue;
-            }
-            uint8_t next_tile_id = get_tile_id(next_pos);
-            int next_g = n.g + get_move_abs_dist(curr_tile_id, next_tile_id);
-            AbstractNode m(next_pos, next_g);
-            open.push(m);
-        }
-    }
-    return false; //unreachable
-}
-
-int Pathfinder::get_move_abs_dist(uint8_t src_tile_id, uint8_t dest_tile_id) {
-    if (is_tile_unsigned(dest_tile_id)) {
-        return 1;
-    }
-    if (is_tile_unsigned(src_tile_id)) {
-        return get_sep_abs_dist(TileId::ZERO, dest_tile_id);
-    }
-    if (get_signed_tile_pow(dest_tile_id) == TILE_POW_MAX) {
-        return min(get_sep_abs_dist(src_tile_id, TileId::ZERO), get_sep_abs_dist(src_tile_id, get_opposite_tile_id(dest_tile_id)));
-    }
-    return get_sep_abs_dist(src_tile_id, dest_tile_id);
-}
-
-//assume neither is zero or empty
-int Pathfinder::get_sep_abs_dist(uint8_t tile_id1, uint8_t tile_id2) {
-    int ans = abs(tile_id1 - tile_id2) * 2;
-    int sgn_change_penalty = int(get_true_tile_sign(tile_id1) * get_true_tile_sign(tile_id2) == -1) * ABSTRACT_DIST_SIGN_CHANGE_PENALTY;
-    return ans + sgn_change_penalty;
-}
-
-int Pathfinder::get_abs_dist(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
-    assert(abstract_dists.find(goal_pos) != abstract_dists.end());
-
-    pair<pq, um>& lists = abstract_dists[goal_pos];
-    um& closed = lists.second;
-
-    auto it = closed.find(node_pos);
-    if (it != closed.end()) {
-        return (*it).second;
-    }
-
-    if (rrd_resume(agent_type_id, goal_pos, node_pos)) {
-        return closed[node_pos];
-    }
-    return numeric_limits<int>::max();
 }
 
 
@@ -1063,4 +997,110 @@ Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2) {
     }
     //same pow opposite sign
     return Vector2i(-1, 1);
+}
+
+
+void rrd_init(uint8_t agent_type_id, Vector2i goal_pos) {
+    if (abstract_dists.find(goal_pos) != abstract_dists.end()) {
+        return;
+    }
+
+    pq open;
+    um closed;
+    pair<pq, um> lists {open, closed};
+
+    if (is_compatible(agent_type_id, get_back_id(goal_pos))) {
+        AbstractNode n(goal_pos, 0);
+        open.push(n);
+    }
+
+    abstract_dists[goal_pos] = lists;
+}
+
+bool rrd_resume(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
+    if (!is_compatible(agent_type_id, get_back_id(node_pos)) || !is_compatible(agent_type_id, get_back_id(goal_pos))) {
+        return false;
+    }
+
+    pair<pq, um>& lists = abstract_dists[goal_pos];
+    pq& open = lists.first;
+    um& closed = lists.second;
+
+    if (closed.find(node_pos) != closed.end()) {
+        return true;
+    }
+
+    while (!open.empty()) {
+        AbstractNode n = open.top();
+
+        if (closed.find(n.pos) != closed.end()) { //don't re-expand
+            assert(n.pos != node_pos);
+            continue;
+        }
+        closed[n.pos] = n.g;
+
+        if (n.pos == node_pos) {
+            //found optimal abs_dist at node
+            //no need to backtrack so parents aren't stored
+            //don't pop n so search is resumable
+            //add to closed so get_abs_dist() can access n.g
+            return true;
+        }
+        open.pop();
+
+        uint8_t curr_tile_id = get_tile_id(n.pos);
+        for (Vector2i dir : DIRECTIONS) {
+            Vector2i next_pos = n.pos + dir;
+
+            if (closed.find(next_pos) != closed.end()) { //closed is all optimal
+                continue;
+            }
+            uint8_t next_tile_id = get_tile_id(next_pos);
+            int next_g = n.g + get_move_abs_dist(curr_tile_id, next_tile_id);
+            AbstractNode m(next_pos, next_g);
+            open.push(m);
+        }
+    }
+    return false; //unreachable
+}
+
+int get_move_abs_dist(uint8_t src_tile_id, uint8_t dest_tile_id) {
+    if (is_tile_unsigned(dest_tile_id)) {
+        return 1;
+    }
+    if (is_tile_unsigned(src_tile_id)) {
+        return get_sep_abs_dist(TileId::ZERO, dest_tile_id);
+    }
+    if (get_signed_tile_pow(dest_tile_id) == TILE_POW_MAX) {
+        return min(get_sep_abs_dist(src_tile_id, TileId::ZERO), get_sep_abs_dist(src_tile_id, get_opposite_tile_id(dest_tile_id)));
+    }
+    return get_sep_abs_dist(src_tile_id, dest_tile_id);
+}
+
+//assume neither is zero or empty
+int get_sep_abs_dist(uint8_t tile_id1, uint8_t tile_id2) {
+    int ans = abs(tile_id1 - tile_id2) * 2;
+    int sgn_change_penalty = int(get_true_tile_sign(tile_id1) * get_true_tile_sign(tile_id2) == -1) * ABSTRACT_DIST_SIGN_CHANGE_PENALTY;
+    return ans + sgn_change_penalty;
+}
+
+int abstract_dist(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
+    assert(abstract_dists.find(goal_pos) != abstract_dists.end());
+
+    pair<pq, um>& lists = abstract_dists[goal_pos];
+    um& closed = lists.second;
+
+    auto it = closed.find(node_pos);
+    if (it != closed.end()) {
+        return (*it).second;
+    }
+
+    if (rrd_resume(agent_type_id, goal_pos, node_pos)) {
+        return closed[node_pos];
+    }
+    return numeric_limits<int>::max();
+}
+
+int manhattan_dist(Vector2i pos1, Vector2i pos2) {
+    return abs(pos1.x - pos2.x) + abs(pos1.y - pos2.y);
 }

@@ -68,8 +68,10 @@ enum ColorId {
 enum SearchId {
 	DIJKSTRA = 0,
     HBJPD, //horizontally biased jump point dijkstra
-	ASTAR,
-	IDASTAR,
+	MDA, //manhattan distance astar
+    ADA, //abstract distance astar
+	IDMDA, //iterative deepening *
+    IDIDJPA,
 };
 
 enum ActionId {
@@ -119,7 +121,7 @@ struct SANode : public enable_shared_from_this<SANode> {
     Vector2i lv_pos;
     vector<vector<uint16_t>> lv;
     int g=0, h=0, f=0; //use f for dijkstra
-    //for fast equality check
+    //zobrist; for fast equality check
     size_t hash;
     //for backtracing
     vector<Vector3i> prev_actions;
@@ -164,7 +166,14 @@ struct SANodeHashGetter  {
 struct SANodeEquator {
 	bool operator() (const shared_ptr<SANode> first, const shared_ptr<SANode> second) const {
 		//return (first->lv_pos == second->lv_pos && first->lv == second->lv);
-        return first->hash == second->hash;
+        //return first->hash == second->hash && first->lv_pos == second->lv_pos && first->lv == second->lv;
+        if  (first->hash == second->hash) {
+            if (first->lv_pos == second->lv_pos && first->lv == second->lv) {
+                return true;
+            }
+            UtilityFunctions::print("HASH COLLISION");
+        }
+        return false;
 	}
 };
 
@@ -181,8 +190,6 @@ struct SANodeComparer {
 	}
 };
 
-typedef priority_queue<AbstractNode, vector<AbstractNode>, AbstractNodeComparer> pq;
-typedef unordered_map<Vector2i, int, Vector2iHasher> um;
 
 class Pathfinder : public Node {
     friend struct SANode;
@@ -192,19 +199,15 @@ private:
     Vector2i player_pos;
     Vector2i player_last_dir;
     //GDScript* GV;
-    unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> abstract_dists; //goal_pos, {open, closed}; assume all entries are actively used
 
 protected:
     static void _bind_methods();
 
 public:
-    Array pathfind(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_astar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_idastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_rrdastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_ididjpastar(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
 
     void set_player_pos(Vector2i pos);
     void set_player_last_dir(Vector2i dir);
@@ -214,12 +217,6 @@ public:
 
     bool is_tile(Vector2i pos);
     bool is_immediately_trapped(Vector2i pos);
-
-    void rrd_init(uint8_t agent_type_id, Vector2i goal_pos);
-    bool rrd_resume(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos);
-    int get_move_abs_dist(uint8_t src_tile_id, uint8_t dest_tile_id);
-    int get_sep_abs_dist(uint8_t tile_id1, uint8_t tile_id2);
-    int get_abs_dist(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos);
 };
 
 const unordered_set<uint8_t> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
@@ -247,11 +244,15 @@ const uint16_t REGULAR_TYPE_BITS = TypeId::REGULAR << TILE_ID_BITLEN;
 const bool TRACK_ZEROS = false;
 const bool TRACK_KILLABLE_TYPES = false;
 
+typedef priority_queue<AbstractNode, vector<AbstractNode>, AbstractNodeComparer> pq;
+typedef unordered_map<Vector2i, int, Vector2iHasher> um;
+
 extern array<array<array<size_t, TILE_ID_COUNT - 1>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys;
 extern array<array<array<size_t, TypeId::REGULAR>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> type_id_hash_keys;
 extern array<array<size_t, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> agent_pos_hash_keys;
 extern TileMap* cells;
 extern int tile_push_limit;
+extern unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> abstract_dists; //goal_pos, {open, closed}; assume all entries are actively used
 
 template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
@@ -298,5 +299,12 @@ uint16_t get_jumped_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
 uint8_t get_merged_tile_id(uint8_t tile_id1, uint8_t tile_id2);
 Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2);
 
+//heuristics
+void rrd_init(uint8_t agent_type_id, Vector2i goal_pos);
+bool rrd_resume(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos);
+int get_move_abs_dist(uint8_t src_tile_id, uint8_t dest_tile_id);
+int get_sep_abs_dist(uint8_t tile_id1, uint8_t tile_id2);
+int abstract_dist(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos); //not admissible
+int manhattan_dist(Vector2i pos1, Vector2i pos2);
 
 #endif
