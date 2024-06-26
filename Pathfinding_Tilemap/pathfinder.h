@@ -5,6 +5,7 @@
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/tile_map.hpp>
 //#include <godot_cpp/classes/gd_script.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <unordered_map>
 #include <unordered_set>
 #include <queue>
@@ -70,8 +71,8 @@ enum SearchId {
     HBJPD, //horizontally biased jump point dijkstra
 	MDA, //manhattan distance astar
     ADA, //abstract distance astar
-	IDMDA, //iterative deepening *
-    IDIDJPA,
+    IADA, //incompatible abstract distance astar
+	//IDA, IDIDJPA, LR, CBS, QUANT
 };
 
 enum ActionId {
@@ -155,6 +156,25 @@ struct SANode : public enable_shared_from_this<SANode> {
     shared_ptr<SANode> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change);
     shared_ptr<SANode> get_jump_point(Vector2i dir, Vector2i jp_pos, int jump_dist);
     void prune_action_ids(Vector2i dir);
+
+    //heuristics (only cells in lv allowed for rrd)
+    //if rrd finds that goal_pos is enclosed, return numeric_limits<int>::max() so pathfinder can exit early
+    //inconsistent abstract distance
+    //propagate h-cost using separation between tile_ids
+    int get_iad(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos);
+    void rrd_init_iad(uint8_t agent_type_id, Vector2i goal_pos);
+    int rrd_resume_iad(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos);
+    void rrd_clear_iad();
+    int get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id);
+    int get_tile_id_sep(uint8_t tile_id1, uint8_t tile_id2);
+    //consistent abstract distance
+    //given sequence of tile_ids from agent to goal (inclusive) (if pushable, sequence <- empty)
+    //sequence break occurs at tile if from agent, no combination of slide/split makes tile reachable
+    //increment h-cost by 2 (assume agent merges with opposite sign and steps back), and start new sequence where sequence break occurred
+    //store results, don't re-process entire sequence each time
+    int get_cad(Vector2i agent_pos, Vector2i goal_pos);
+    void rrd_init_cad(Vector2i agent_pos, Vector2i goal_pos);
+    int manhattan_dist(Vector2i pos1, Vector2i pos2);
 };
 
 struct SANodeHashGetter  {
@@ -204,10 +224,12 @@ protected:
     static void _bind_methods();
 
 public:
+    //check for numeric_limits<int>::max() to exit early if using an rrd heuristic
     Array pathfind_sa(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_ada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
 
     void set_player_pos(Vector2i pos);
     void set_player_last_dir(Vector2i dir);
@@ -245,14 +267,15 @@ const bool TRACK_ZEROS = false;
 const bool TRACK_KILLABLE_TYPES = false;
 
 typedef priority_queue<AbstractNode, vector<AbstractNode>, AbstractNodeComparer> pq;
-typedef unordered_map<Vector2i, int, Vector2iHasher> um;
+typedef unordered_map<Vector2i, int, Vector2iHasher> um; //node_pos, abstract_dist
 
 extern array<array<array<size_t, TILE_ID_COUNT - 1>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys;
 extern array<array<array<size_t, TypeId::REGULAR>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> type_id_hash_keys;
 extern array<array<size_t, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> agent_pos_hash_keys;
 extern TileMap* cells;
 extern int tile_push_limit;
-extern unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> abstract_dists; //goal_pos, {open, closed}; assume all entries are actively used
+extern unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, {open, closed}; assume all entries are actively used
+extern unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> consistent_abstract_dists;
 
 template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
@@ -298,13 +321,5 @@ uint16_t get_merged_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
 uint16_t get_jumped_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
 uint8_t get_merged_tile_id(uint8_t tile_id1, uint8_t tile_id2);
 Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2);
-
-//heuristics
-void rrd_init(uint8_t agent_type_id, Vector2i goal_pos);
-bool rrd_resume(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos);
-int get_move_abs_dist(uint8_t src_tile_id, uint8_t dest_tile_id);
-int get_sep_abs_dist(uint8_t tile_id1, uint8_t tile_id2);
-int abstract_dist(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos); //not admissible
-int manhattan_dist(Vector2i pos1, Vector2i pos2);
 
 #endif

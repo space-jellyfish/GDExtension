@@ -1,4 +1,3 @@
-#include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/classes/ref.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <cassert>
@@ -16,7 +15,8 @@ array<array<array<size_t, TypeId::REGULAR>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT
 array<array<size_t, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> agent_pos_hash_keys;
 TileMap* cells;
 int tile_push_limit;
-unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> abstract_dists;
+unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> inconsistent_abstract_dists;
+unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> consistent_abstract_dists;
 
 void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_player_pos", "pos"), &Pathfinder::set_player_pos);
@@ -498,7 +498,131 @@ void SANode::prune_action_ids(Vector2i dir) {
     }
 }
 
+//inconsistent abstract distance
+int SANode::get_iad(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
+    assert(inconsistent_abstract_dists.find(goal_pos) != inconsistent_abstract_dists.end());
+    return rrd_resume_iad(agent_type_id, goal_pos, node_pos);
+}
+
+void SANode::rrd_init_iad(uint8_t agent_type_id, Vector2i goal_pos) {
+    if (inconsistent_abstract_dists.find(goal_pos) != inconsistent_abstract_dists.end()) {
+        //
+        return;
+    }
+
+    pq open;
+    um closed;
+    pair<pq, um> lists {open, closed};
+
+    if (is_compatible(agent_type_id, get_back_id(goal_pos))) {
+        AbstractNode n(goal_pos, 0);
+        open.push(n);
+    }
+
+    inconsistent_abstract_dists[goal_pos] = lists;
+}
+
+//assume agent is compatible with goal_pos
+//open not necessarily optimal bc edges not unit length
+//closed is optimal bc closed
+//inconsistent_abstract_dists becomes invalid if lv changes
+int SANode::rrd_resume_iad(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
+    if (!is_compatible(agent_type_id, get_back_id(node_pos))) {
+        return numeric_limits<int>::max();
+    }
+
+    pair<pq, um>& lists = inconsistent_abstract_dists[goal_pos];
+    pq& open = lists.first;
+    um& closed = lists.second;
+
+    auto it = closed.find(node_pos);
+    if (it != closed.end()) {
+        return (*it).second;
+    }
+
+    while (!open.empty()) {
+        AbstractNode n = open.top();
+
+        if (closed.find(n.pos) != closed.end()) { //don't re-expand
+            assert(n.pos != node_pos);
+            continue;
+        }
+        closed[n.pos] = n.g;
+
+        if (n.pos == node_pos) {
+            //found optimal iad at node
+            //add to closed before returning
+            //no need to backtrack so parents aren't stored
+            //don't pop n so search is resumable
+            return n.g;
+        }
+        open.pop();
+
+        uint8_t curr_tile_id = get_tile_id(n.pos);
+        for (Vector2i dir : DIRECTIONS) {
+            Vector2i next_pos = n.pos + dir;
+
+            if (closed.find(next_pos) != closed.end()) { //closed is all optimal
+                continue;
+            }
+            uint8_t next_tile_id = get_tile_id(next_pos);
+            int next_g = n.g + get_action_iad(curr_tile_id, next_tile_id);
+            AbstractNode m(next_pos, next_g);
+            open.push(m);
+        }
+    }
+    return numeric_limits<int>::max(); //unreachable
+}
+
+void SANode::rrd_clear_iad() {
+    inconsistent_abstract_dists.clear();
+}
+
+int SANode::get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id) {
+    if (is_tile_unsigned(dest_tile_id)) {
+        return 1;
+    }
+    if (is_tile_unsigned(src_tile_id)) {
+        return get_tile_id_sep(TileId::ZERO, dest_tile_id);
+    }
+    int dist_to_zero = get_tile_id_sep(src_tile_id, TileId::ZERO);
+    int dist_to_opposite = get_tile_id_sep(src_tile_id, get_opposite_tile_id(dest_tile_id));
+    int min_dist_to_zero_or_opposite = min(dist_to_zero, dist_to_opposite);
+    if (get_signed_tile_pow(dest_tile_id) == TILE_POW_MAX) {
+        return min_dist_to_zero_or_opposite;
+    }
+    int dist_to_same = get_tile_id_sep(src_tile_id, dest_tile_id);
+    return min(dist_to_same, min_dist_to_zero_or_opposite);
+}
+
+//assume neither is zero or empty
+int SANode::get_tile_id_sep(uint8_t tile_id1, uint8_t tile_id2) {
+    int ans = abs(tile_id1 - tile_id2) * 2;
+    int sgn_change_penalty = int(get_true_tile_sign(tile_id1) * get_true_tile_sign(tile_id2) == -1) * ABSTRACT_DIST_SIGN_CHANGE_PENALTY;
+    return ans + sgn_change_penalty;
+}
+
+int SANode::get_cad(Vector2i agent_pos, Vector2i goal_pos) {
+    assert(consistent_abstract_dists.find(goal_pos) != consistent_abstract_dists.end());
+    
+
+}
+
+void SANode::rrd_init_cad(Vector2i agent_pos, Vector2i goal_pos) {
+
+}
+
+int SANode::manhattan_dist(Vector2i pos1, Vector2i pos2) {
+    return abs(pos1.x - pos2.x) + abs(pos1.y - pos2.y);
+}
+
+//use an rrd heuristic search for enclosure check
 Array Pathfinder::pathfind_sa(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    //type check
+    if (!is_compatible(get_type_id(start), get_back_id(end))) {
+        return Array();
+    }
+
     switch (search_id) {
         case SearchId::DIJKSTRA:
             return pathfind_sa_dijkstra(max_depth, min, max, start, end);
@@ -506,6 +630,8 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, Vector2i min, Vector
             return pathfind_sa_hbjpd(max_depth, min, max, start, end);
         case SearchId::MDA:
             return pathfind_sa_mda(max_depth, min, max, start, end);
+        case SearchId::ADA:
+            return pathfind_sa_ada(max_depth, min, max, start, end);
         default:
             return pathfind_sa_hbjpd(max_depth, min, max, start, end);
     }
@@ -646,7 +772,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
     shared_ptr<SANode> first = make_shared<SANode>();
     first->init_lv_pos(start - min);
     first->init_lv(min, max, start);
-    first->h = manhattan_dist(first->lv_pos, lv_end);
+    first->h = first->manhattan_dist(first->lv_pos, lv_end);
     first->f = first->h;
     //first can have prev_actions and prev_push_count uninitialized
     open.push(first);
@@ -687,7 +813,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
                 if (it != best_dists.end() && (*it).second <= neighbor->g) {
                     continue;
                 }
-                neighbor->h = manhattan_dist(neighbor->lv_pos, lv_end);
+                neighbor->h = neighbor->manhattan_dist(neighbor->lv_pos, lv_end);
                 neighbor->f = neighbor->g + neighbor->h;
                 open.push(neighbor);
                 best_dists[neighbor] = neighbor->g;
@@ -695,6 +821,11 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
         }
     }
     return Array();
+}
+
+//if neighbor valid and h(neighbor) == numeric_limits<int>::max(), exit early bc no path exists
+Array Pathfinder::pathfind_sa_ada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+
 }
 
 void Pathfinder::set_player_pos(Vector2i pos) {
@@ -997,110 +1128,4 @@ Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2) {
     }
     //same pow opposite sign
     return Vector2i(-1, 1);
-}
-
-
-void rrd_init(uint8_t agent_type_id, Vector2i goal_pos) {
-    if (abstract_dists.find(goal_pos) != abstract_dists.end()) {
-        return;
-    }
-
-    pq open;
-    um closed;
-    pair<pq, um> lists {open, closed};
-
-    if (is_compatible(agent_type_id, get_back_id(goal_pos))) {
-        AbstractNode n(goal_pos, 0);
-        open.push(n);
-    }
-
-    abstract_dists[goal_pos] = lists;
-}
-
-bool rrd_resume(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
-    if (!is_compatible(agent_type_id, get_back_id(node_pos)) || !is_compatible(agent_type_id, get_back_id(goal_pos))) {
-        return false;
-    }
-
-    pair<pq, um>& lists = abstract_dists[goal_pos];
-    pq& open = lists.first;
-    um& closed = lists.second;
-
-    if (closed.find(node_pos) != closed.end()) {
-        return true;
-    }
-
-    while (!open.empty()) {
-        AbstractNode n = open.top();
-
-        if (closed.find(n.pos) != closed.end()) { //don't re-expand
-            assert(n.pos != node_pos);
-            continue;
-        }
-        closed[n.pos] = n.g;
-
-        if (n.pos == node_pos) {
-            //found optimal abs_dist at node
-            //no need to backtrack so parents aren't stored
-            //don't pop n so search is resumable
-            //add to closed so get_abs_dist() can access n.g
-            return true;
-        }
-        open.pop();
-
-        uint8_t curr_tile_id = get_tile_id(n.pos);
-        for (Vector2i dir : DIRECTIONS) {
-            Vector2i next_pos = n.pos + dir;
-
-            if (closed.find(next_pos) != closed.end()) { //closed is all optimal
-                continue;
-            }
-            uint8_t next_tile_id = get_tile_id(next_pos);
-            int next_g = n.g + get_move_abs_dist(curr_tile_id, next_tile_id);
-            AbstractNode m(next_pos, next_g);
-            open.push(m);
-        }
-    }
-    return false; //unreachable
-}
-
-int get_move_abs_dist(uint8_t src_tile_id, uint8_t dest_tile_id) {
-    if (is_tile_unsigned(dest_tile_id)) {
-        return 1;
-    }
-    if (is_tile_unsigned(src_tile_id)) {
-        return get_sep_abs_dist(TileId::ZERO, dest_tile_id);
-    }
-    if (get_signed_tile_pow(dest_tile_id) == TILE_POW_MAX) {
-        return min(get_sep_abs_dist(src_tile_id, TileId::ZERO), get_sep_abs_dist(src_tile_id, get_opposite_tile_id(dest_tile_id)));
-    }
-    return get_sep_abs_dist(src_tile_id, dest_tile_id);
-}
-
-//assume neither is zero or empty
-int get_sep_abs_dist(uint8_t tile_id1, uint8_t tile_id2) {
-    int ans = abs(tile_id1 - tile_id2) * 2;
-    int sgn_change_penalty = int(get_true_tile_sign(tile_id1) * get_true_tile_sign(tile_id2) == -1) * ABSTRACT_DIST_SIGN_CHANGE_PENALTY;
-    return ans + sgn_change_penalty;
-}
-
-int abstract_dist(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
-    assert(abstract_dists.find(goal_pos) != abstract_dists.end());
-
-    pair<pq, um>& lists = abstract_dists[goal_pos];
-    um& closed = lists.second;
-
-    auto it = closed.find(node_pos);
-    if (it != closed.end()) {
-        return (*it).second;
-    }
-
-    if (rrd_resume(agent_type_id, goal_pos, node_pos)) {
-        return closed[node_pos];
-    }
-    return numeric_limits<int>::max();
-}
-
-int manhattan_dist(Vector2i pos1, Vector2i pos2) {
-    return abs(pos1.x - pos2.x) + abs(pos1.y - pos2.y);
 }
