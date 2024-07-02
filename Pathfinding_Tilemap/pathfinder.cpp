@@ -25,6 +25,10 @@ void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_tile_push_limits", "tpls"), &Pathfinder::set_tile_push_limits);
     ClassDB::bind_method(D_METHOD("generate_hash_keys"), &Pathfinder::generate_hash_keys);
     ClassDB::bind_method(D_METHOD("pathfind_sa", "search_id", "max_depth", "min", "max", "start", "end"), &Pathfinder::pathfind_sa);
+    ClassDB::bind_method(D_METHOD("rrd_init_iad", "goal_pos"), &Pathfinder::rrd_init_iad);
+    ClassDB::bind_method(D_METHOD("rrd_init_cad", "goal_pos"), &Pathfinder::rrd_init_cad);
+    ClassDB::bind_method(D_METHOD("rrd_resume_iad", "goal_pos", "node_pos", "agent_type_id"), &Pathfinder::rrd_resume_iad);
+    ClassDB::bind_method(D_METHOD("rrd_resume_cad", "goal_pos", "agent_pos"), &Pathfinder::rrd_resume_cad);
     ClassDB::bind_method(D_METHOD("rrd_clear_iad"), &Pathfinder::rrd_clear_iad);
     ClassDB::bind_method(D_METHOD("rrd_clear_cad"), &Pathfinder::rrd_clear_cad);
 }
@@ -879,7 +883,7 @@ void Pathfinder::rrd_init_iad(Vector2i goal_pos) {
 //MAX_DEPTH IS DEPRECATED
 //assume closed nodes don't exceed max_depth
 //if pathfind func doesn't generate from nodes at max_depth, using max_depth = 2 * max_search_depth guarantees no wrong heuristics (false exits), regardless of heuristic informativeness
-int Pathfinder::rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, uint8_t agent_type_id) {
+int Pathfinder::rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id) {
     assert(inconsistent_abstract_dists.find(goal_pos) != inconsistent_abstract_dists.end());
 
     //check for stored ans
@@ -895,6 +899,7 @@ int Pathfinder::rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, uint8_t age
         //closed check is necessary bc open may receive duplicate nodes (see Pictures/rrd_iad_expanding_closed_check_is_necessary)
         if (closed.find(n.pos) != closed.end()) {
             assert(n.pos != node_pos);
+            open.pop();
             continue;
         }
         closed[n.pos] = n.g;
@@ -1001,6 +1006,7 @@ int Pathfinder::rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
         //see Pictures/rrd_cad_expanding_closed_check_is_necessary
         it = closed.find(curr);
         if (it != closed.end()) {
+            open.pop();
             continue;
         }
         closed.insert(curr);

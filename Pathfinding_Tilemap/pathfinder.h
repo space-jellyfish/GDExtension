@@ -268,7 +268,7 @@ public:
     //inconsistent abstract distance
     //propagate h-cost using separation between tile_ids
     void rrd_init_iad(Vector2i goal_pos);
-    int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, uint8_t agent_type_id);
+    int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id);
     void rrd_clear_iad();
     int get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id);
     int get_tile_id_sep(uint8_t tile_id1, uint8_t tile_id2);
