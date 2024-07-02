@@ -10,21 +10,23 @@ using namespace std;
 using namespace godot;
 
 
-array<array<array<size_t, TILE_ID_COUNT - 1>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys;
-array<array<array<size_t, TypeId::REGULAR>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> type_id_hash_keys;
-array<array<size_t, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> agent_pos_hash_keys;
+array<array<array<uint64_t, TILE_ID_COUNT - 1>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys;
+array<array<array<uint64_t, TypeId::REGULAR>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> type_id_hash_keys;
+array<array<uint64_t, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> agent_pos_hash_keys;
 TileMap* cells;
-int tile_push_limit;
-unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> inconsistent_abstract_dists;
-unordered_map<Vector2i, pair<pq, um>, Vector2iHasher> consistent_abstract_dists;
+unordered_map<uint8_t, int> tile_push_limits;
+unordered_map<Vector2i, tuple<pq_iad, um, um>, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, {open, closed, best_gs}; assume all entries are actively used
+unordered_map<Vector2i, tuple<pq_cad, us_cad, um>, Vector2iHasher> consistent_abstract_dists; //goal_pos, {open, closed, best_gs}; closed is necessary to store guaranteed optimal results
 
 void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_player_pos", "pos"), &Pathfinder::set_player_pos);
     ClassDB::bind_method(D_METHOD("set_player_last_dir", "dir"), &Pathfinder::set_player_last_dir);
 	ClassDB::bind_method(D_METHOD("set_tilemap", "t"), &Pathfinder::set_tilemap);
-    ClassDB::bind_method(D_METHOD("set_tile_push_limit", "tpl"), &Pathfinder::set_tile_push_limit);
+    ClassDB::bind_method(D_METHOD("set_tile_push_limits", "tpls"), &Pathfinder::set_tile_push_limits);
     ClassDB::bind_method(D_METHOD("generate_hash_keys"), &Pathfinder::generate_hash_keys);
     ClassDB::bind_method(D_METHOD("pathfind_sa", "search_id", "max_depth", "min", "max", "start", "end"), &Pathfinder::pathfind_sa);
+    ClassDB::bind_method(D_METHOD("rrd_clear_iad"), &Pathfinder::rrd_clear_iad);
+    ClassDB::bind_method(D_METHOD("rrd_clear_cad"), &Pathfinder::rrd_clear_cad);
 }
 
 Array SANode::trace_path(int path_len) {
@@ -174,6 +176,7 @@ int SANode::get_slide_push_count(Vector2i dir, bool allow_type_change) {
     uint16_t curr_stuff_id = get_lv_sid(curr_lv_pos);
     uint8_t curr_tile_id = get_tile_id(curr_stuff_id);
     uint8_t curr_type_id = get_type_id(curr_stuff_id);
+    int tile_push_limit = tile_push_limits[curr_type_id];
     bool is_agent_enemy = T_ENEMY.find(curr_type_id) != T_ENEMY.end();
     int push_count = 0;
     int nearest_merge_push_count = -1;
@@ -344,9 +347,9 @@ shared_ptr<SANode> SANode::try_action(Vector3i action, Vector2i lv_end, bool all
 
 //get_jump_point() correctly inits prev_push_count to 0
 //doesn't change agent type/tile_id
-//doesn't split or push/merge any signed_or_regular tiles
+//only jump through empty_and_regular tiles
 //see Devlog/jump_conditions for details
-//when expanding a jp, expand split in all dirs, expand slide iff next tile isn't unsigned_and_regular
+//when generating from jp, generate split in all dirs, generate slide iff next tile isn't empty_and_regular
 shared_ptr<SANode> SANode::try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change) {
     //check bound
     int dist_to_lv_edge = get_dist_to_lv_edge(dir);
@@ -498,123 +501,6 @@ void SANode::prune_action_ids(Vector2i dir) {
     }
 }
 
-//inconsistent abstract distance
-int SANode::get_iad(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
-    assert(inconsistent_abstract_dists.find(goal_pos) != inconsistent_abstract_dists.end());
-    return rrd_resume_iad(agent_type_id, goal_pos, node_pos);
-}
-
-void SANode::rrd_init_iad(uint8_t agent_type_id, Vector2i goal_pos) {
-    if (inconsistent_abstract_dists.find(goal_pos) != inconsistent_abstract_dists.end()) {
-        //
-        return;
-    }
-
-    pq open;
-    um closed;
-    pair<pq, um> lists {open, closed};
-
-    if (is_compatible(agent_type_id, get_back_id(goal_pos))) {
-        AbstractNode n(goal_pos, 0);
-        open.push(n);
-    }
-
-    inconsistent_abstract_dists[goal_pos] = lists;
-}
-
-//assume agent is compatible with goal_pos
-//open not necessarily optimal bc edges not unit length
-//closed is optimal bc closed
-//inconsistent_abstract_dists becomes invalid if lv changes
-int SANode::rrd_resume_iad(uint8_t agent_type_id, Vector2i goal_pos, Vector2i node_pos) {
-    if (!is_compatible(agent_type_id, get_back_id(node_pos))) {
-        return numeric_limits<int>::max();
-    }
-
-    pair<pq, um>& lists = inconsistent_abstract_dists[goal_pos];
-    pq& open = lists.first;
-    um& closed = lists.second;
-
-    auto it = closed.find(node_pos);
-    if (it != closed.end()) {
-        return (*it).second;
-    }
-
-    while (!open.empty()) {
-        AbstractNode n = open.top();
-
-        if (closed.find(n.pos) != closed.end()) { //don't re-expand
-            assert(n.pos != node_pos);
-            continue;
-        }
-        closed[n.pos] = n.g;
-
-        if (n.pos == node_pos) {
-            //found optimal iad at node
-            //add to closed before returning
-            //no need to backtrack so parents aren't stored
-            //don't pop n so search is resumable
-            return n.g;
-        }
-        open.pop();
-
-        uint8_t curr_tile_id = get_tile_id(n.pos);
-        for (Vector2i dir : DIRECTIONS) {
-            Vector2i next_pos = n.pos + dir;
-
-            if (closed.find(next_pos) != closed.end()) { //closed is all optimal
-                continue;
-            }
-            uint8_t next_tile_id = get_tile_id(next_pos);
-            int next_g = n.g + get_action_iad(curr_tile_id, next_tile_id);
-            AbstractNode m(next_pos, next_g);
-            open.push(m);
-        }
-    }
-    return numeric_limits<int>::max(); //unreachable
-}
-
-void SANode::rrd_clear_iad() {
-    inconsistent_abstract_dists.clear();
-}
-
-int SANode::get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id) {
-    if (is_tile_unsigned(dest_tile_id)) {
-        return 1;
-    }
-    if (is_tile_unsigned(src_tile_id)) {
-        return get_tile_id_sep(TileId::ZERO, dest_tile_id);
-    }
-    int dist_to_zero = get_tile_id_sep(src_tile_id, TileId::ZERO);
-    int dist_to_opposite = get_tile_id_sep(src_tile_id, get_opposite_tile_id(dest_tile_id));
-    int min_dist_to_zero_or_opposite = min(dist_to_zero, dist_to_opposite);
-    if (get_signed_tile_pow(dest_tile_id) == TILE_POW_MAX) {
-        return min_dist_to_zero_or_opposite;
-    }
-    int dist_to_same = get_tile_id_sep(src_tile_id, dest_tile_id);
-    return min(dist_to_same, min_dist_to_zero_or_opposite);
-}
-
-//assume neither is zero or empty
-int SANode::get_tile_id_sep(uint8_t tile_id1, uint8_t tile_id2) {
-    int ans = abs(tile_id1 - tile_id2) * 2;
-    int sgn_change_penalty = int(get_true_tile_sign(tile_id1) * get_true_tile_sign(tile_id2) == -1) * ABSTRACT_DIST_SIGN_CHANGE_PENALTY;
-    return ans + sgn_change_penalty;
-}
-
-int SANode::get_cad(Vector2i agent_pos, Vector2i goal_pos) {
-    assert(consistent_abstract_dists.find(goal_pos) != consistent_abstract_dists.end());
-    
-
-}
-
-void SANode::rrd_init_cad(Vector2i agent_pos, Vector2i goal_pos) {
-
-}
-
-int SANode::manhattan_dist(Vector2i pos1, Vector2i pos2) {
-    return abs(pos1.x - pos2.x) + abs(pos1.y - pos2.y);
-}
 
 //use an rrd heuristic search for enclosure check
 Array Pathfinder::pathfind_sa(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
@@ -630,17 +516,21 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, Vector2i min, Vector
             return pathfind_sa_hbjpd(max_depth, min, max, start, end);
         case SearchId::MDA:
             return pathfind_sa_mda(max_depth, min, max, start, end);
-        case SearchId::ADA:
-            return pathfind_sa_ada(max_depth, min, max, start, end);
+        case SearchId::IADA:
+            return pathfind_sa_iada(max_depth, min, max, start, end);
         default:
             return pathfind_sa_hbjpd(max_depth, min, max, start, end);
     }
 }
 
+//don't generate from nodes at max_depth or if generate, don't do numeric_limits<int>::max() heuristic early exit until max_depth check
 //assume no type_id change allowed
 //open nodes are optimal since edges are unit cost
 //closed nodes are optimal bc dijkstra
 Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    //NEEDS PROFILING with deque
+    //use ptrs bc prev requires a fixed addr, faster to copy, duplicates in open use less mem
+    //use shared_ptr instead of unique_ptr bc prev/neighbors also require it
     priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
     //change to unordered_set<LightweightSANode> for less memory usage but no collision checking,
     //where LightweightSANode only stores hash (for KeyEqual) and prev/prev_actions (for trace_path())
@@ -657,11 +547,9 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
     best_dists[first] = first->f;
 
     while (!open.empty()) {
+        //expand node
         shared_ptr<SANode> curr = open.top();
 
-        if (curr->f > max_depth) {
-            return Array();
-        }
         if (curr->lv_pos == lv_end) {
             return curr->trace_path(curr->f);
         }
@@ -670,7 +558,16 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
         assert(closed.find(curr) == closed.end());
         closed.insert(curr);
 
+        //check max depth here bc all edges unit length
+        if (curr->f == max_depth) {
+            continue;
+        }
+
+        //generate neighbors
         for (Vector2i dir : DIRECTIONS) {
+            if (!curr->get_dist_to_lv_edge(dir)) {
+                continue;
+            }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i action(dir.x, dir.y, action_id);
                 shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
@@ -687,10 +584,10 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
                 if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
-                assert(neighbor->f == curr->f); //every node expanded at most once, so there is no double-increment
+                assert(neighbor->f == curr->f); //every node generates at most once, so there is no double-increment
                 ++(neighbor->f); //update f/g/h in pathfind funcs bc they could be used differently in each func
 
-                //check if neighbor has been expanded with shorter dist
+                //check if neighbor has been generated with shorter dist
                 auto it = best_dists.find(neighbor);
                 if (it != best_dists.end() && (*it).second <= neighbor->f) {
                     continue;
@@ -720,9 +617,6 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
     while (!open.empty()) {
         shared_ptr<SANode> curr = open.top();
 
-        if (curr->f > max_depth) {
-            return Array();
-        }
         if (curr->lv_pos + min == end) {
             return curr->trace_path(curr->f);
         }
@@ -734,10 +628,16 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
         closed.insert(curr);
 
         for (Vector2i dir : DIRECTIONS) {
+            if (!curr->get_dist_to_lv_edge(dir)) {
+                continue;
+            }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::END; ++action_id) {
-                //expand split in all dirs, expand slide iff next tile isn't unsigned_and_regular
-                //expand jump iff next tile is unsigned_and_regular and dir is natural - handled in jump()
+                //generate split in all dirs, don't generate slide if next tile is empty_and_regular
+                //generate jump iff next tile is empty_and_regular and dir is natural - handled in jump()
                 //only search in dir of natural neighbors (except first node) - handled via pruning
+                if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->get_lv_sid(curr->lv_pos + dir))) {
+                    continue;
+                }
                 Vector3i action = Vector3i(dir.x, dir.y, action_id);
                 shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
 
@@ -748,6 +648,12 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
                     continue;
                 }
                 neighbor->f += neighbor->prev_actions.size();
+
+                //catch nodes that exceed max_depth as early as possible
+                //since open << closed for typical search, generating check is not much more expensive than expanding check
+                if (neighbor->f > max_depth) {
+                    continue;
+                }
 
                 auto it = best_dists.find(neighbor);
                 if (it != best_dists.end() && (*it).second <= neighbor->f) {
@@ -772,7 +678,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
     shared_ptr<SANode> first = make_shared<SANode>();
     first->init_lv_pos(start - min);
     first->init_lv(min, max, start);
-    first->h = first->manhattan_dist(first->lv_pos, lv_end);
+    first->h = manhattan_dist(first->lv_pos, lv_end);
     first->f = first->h;
     //first can have prev_actions and prev_push_count uninitialized
     open.push(first);
@@ -781,9 +687,6 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
     while (!open.empty()) {
         shared_ptr<SANode> curr = open.top();
 
-        if (curr->f > max_depth) { //final path_len is at least curr->f
-            return Array();
-        }
         if (curr->lv_pos == lv_end) {
             return curr->trace_path(curr->g);
         }
@@ -795,6 +698,9 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
         closed.insert(curr);
 
         for (Vector2i dir : DIRECTIONS) {
+            if (!curr->get_dist_to_lv_edge(dir)) {
+                continue;
+            }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i action(dir.x, dir.y, action_id);
                 shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
@@ -808,13 +714,20 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
                     continue;
                 }
                 ++(neighbor->g);
+                neighbor->h = manhattan_dist(neighbor->lv_pos, lv_end);
+                neighbor->f = neighbor->g + neighbor->h;
+
+                //manhattan is consistent, so final path_len >= curr->f and f is monotonically increasing
+                //f can increase more than one unit at a time, so == check when expanding doesn't work
+                //if curr->g == max_depth, neighbor->g > max_depth, neighbor->f > max_depth, so no nodes are generated from max_depth
+                if (neighbor->f > max_depth) {
+                    continue;
+                }
 
                 auto it = best_dists.find(neighbor);
                 if (it != best_dists.end() && (*it).second <= neighbor->g) {
                     continue;
                 }
-                neighbor->h = neighbor->manhattan_dist(neighbor->lv_pos, lv_end);
-                neighbor->f = neighbor->g + neighbor->h;
                 open.push(neighbor);
                 best_dists[neighbor] = neighbor->g;
             }
@@ -823,9 +736,69 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
     return Array();
 }
 
+//f can decrease
+//closed is unnecessary; shared_ptrs are stored in best_dists, so trace_path() will still work
+//open and returned path are not necessarily optimal
 //if neighbor valid and h(neighbor) == numeric_limits<int>::max(), exit early bc no path exists
-Array Pathfinder::pathfind_sa_ada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_iada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
+    unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+    Vector2i lv_end = end - min;
+    uint8_t agent_type_id = get_type_id(start);
+    rrd_init_iad(end);
 
+    shared_ptr<SANode> first = make_shared<SANode>();
+    first->init_lv_pos(start - min);
+    first->init_lv(min, max, start);
+    first->h = rrd_resume_iad(end, start, agent_type_id);
+
+    //enclosed goal check
+    if (first->h == numeric_limits<int>::max()) {
+        return Array();
+    }
+
+    first->f = first->h;
+    //first can have prev_actions and prev_push_count uninitialized
+    open.push(first);
+    best_dists[first] = first->g;
+
+    while (!open.empty()) {
+        shared_ptr<SANode> curr = open.top();
+
+        if (curr->lv_pos == lv_end) {
+            return curr->trace_path(curr->g);
+        }
+        open.pop();
+
+        if (curr->g == max_depth) {
+            continue;
+        }
+
+        for (Vector2i dir : DIRECTIONS) {
+            if (!curr->get_dist_to_lv_edge(dir)) {
+                continue;
+            }
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
+                Vector3i action(dir.x, dir.y, action_id);
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
+
+                if (!neighbor) {
+                    continue;
+                }
+                ++(neighbor->g);
+                neighbor->h = rrd_resume_iad(end, min + neighbor->lv_pos, agent_type_id);
+                neighbor->f = neighbor->g + neighbor->h;
+
+                auto it = best_dists.find(neighbor);
+                if (it != best_dists.end() && (*it).second <= neighbor->g) {
+                    continue;
+                }
+                open.push(neighbor);
+                best_dists[neighbor] = neighbor->g;
+            }
+        }
+    }
+    return Array();
 }
 
 void Pathfinder::set_player_pos(Vector2i pos) {
@@ -840,8 +813,12 @@ void Pathfinder::set_tilemap(TileMap* t) {
     cells = t;
 }
 
-void Pathfinder::set_tile_push_limit(int tpl) {
-    tile_push_limit = tpl;
+void Pathfinder::set_tile_push_limits(Dictionary tpls) {
+    Array keys = tpls.keys();
+    for (int i=0; i < keys.size(); ++i) {
+        int key = keys[i];
+        tile_push_limits[key] = tpls[key];
+    }
 }
 
 void Pathfinder::generate_hash_keys() {
@@ -851,7 +828,7 @@ void Pathfinder::generate_hash_keys() {
     }
 
 	std::mt19937_64 generator(0); //fixed seed is okay
-	std::uniform_int_distribution<size_t> distribution(std::numeric_limits<size_t>::min(), std::numeric_limits<size_t>::max());
+	std::uniform_int_distribution<uint64_t> distribution(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max());
 
     for (int y=0; y < MAX_SEARCH_HEIGHT; ++y) {
         for (int x=0; x < MAX_SEARCH_WIDTH; ++x) {
@@ -879,6 +856,228 @@ bool Pathfinder::is_tile(Vector2i pos) {
 
 bool Pathfinder::is_immediately_trapped(Vector2i pos) {
     return false;
+}
+
+
+//assume agent is compatible with goal_pos
+void Pathfinder::rrd_init_iad(Vector2i goal_pos) {
+    if (inconsistent_abstract_dists.find(goal_pos) != inconsistent_abstract_dists.end()) {
+        //goal is already initialized
+        return;
+    }
+    inconsistent_abstract_dists.emplace(make_pair(goal_pos, make_tuple(pq_iad{}, um{}, um{})));
+    std::get<0>(inconsistent_abstract_dists[goal_pos]).emplace(goal_pos, 0);
+    std::get<2>(inconsistent_abstract_dists[goal_pos]).emplace(goal_pos, 0);
+}
+
+//returns the inconsistent abstract distance from node to goal_pos
+//returns numeric_limits<int>::max() if agent incompatible with node_pos or node_pos unreachable from goal
+//assume agent is compatible with goal_pos and node_pos
+//open not necessarily optimal bc edges not unit length
+//closed is optimal bc closed
+//inconsistent_abstract_dists becomes invalid if tilemap changes
+//MAX_DEPTH IS DEPRECATED
+//assume closed nodes don't exceed max_depth
+//if pathfind func doesn't generate from nodes at max_depth, using max_depth = 2 * max_search_depth guarantees no wrong heuristics (false exits), regardless of heuristic informativeness
+int Pathfinder::rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, uint8_t agent_type_id) {
+    assert(inconsistent_abstract_dists.find(goal_pos) != inconsistent_abstract_dists.end());
+
+    //check for stored ans
+    auto& [open, closed, best_gs] = inconsistent_abstract_dists[goal_pos];
+    auto it = closed.find(node_pos);
+    if (it != closed.end()) {
+        return (*it).second;
+    }
+
+    while (!open.empty()) {
+        IADNode n = open.top();
+
+        //closed check is necessary bc open may receive duplicate nodes (see Pictures/rrd_iad_expanding_closed_check_is_necessary)
+        if (closed.find(n.pos) != closed.end()) {
+            assert(n.pos != node_pos);
+            continue;
+        }
+        closed[n.pos] = n.g;
+
+        if (n.pos == node_pos) {
+            //found optimal iad at node
+            //add to closed before returning
+            //no need to backtrack so parents aren't stored
+            //don't pop n so search is resumable
+            return n.g;
+        }
+        open.pop();
+
+        /*
+        //don't generate nodes exceeding max_depth
+        //check here bc depth increases in unit steps
+        if (n.depth == max_depth) {
+            continue;
+        }*/
+
+        uint8_t curr_tile_id = get_tile_id(n.pos);
+        for (Vector2i dir : DIRECTIONS) {
+            Vector2i next_pos = n.pos + dir;
+
+            if (!is_compatible(agent_type_id, get_back_id(next_pos))) {
+                continue;
+            }
+            //see Pictures/rrd_iad_generating_closed_check_is_necessary
+            if (closed.find(next_pos) != closed.end()) {
+                continue;
+            }
+            int next_g = n.g + get_action_iad(curr_tile_id, get_tile_id(next_pos));
+
+            auto it = best_gs.find(next_pos);
+            if (it != best_gs.end() && (*it).second <= next_g) {
+                continue;
+            }
+            open.emplace(next_pos, next_g);
+            best_gs[next_pos] = next_g;
+        }
+    }
+    return numeric_limits<int>::max(); //unreachable
+}
+
+void Pathfinder::rrd_clear_iad() {
+    inconsistent_abstract_dists.clear();
+}
+
+int Pathfinder::get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id) {
+    if (is_tile_unsigned(dest_tile_id)) {
+        return 1;
+    }
+    if (is_tile_unsigned(src_tile_id)) {
+        return get_tile_id_sep(TileId::ZERO, dest_tile_id);
+    }
+    int dist_to_zero = get_tile_id_sep(src_tile_id, TileId::ZERO);
+    int dist_to_opposite = get_tile_id_sep(src_tile_id, get_opposite_tile_id(dest_tile_id));
+    int min_dist_to_zero_or_opposite = min(dist_to_zero, dist_to_opposite);
+    if (get_signed_tile_pow(dest_tile_id) == TILE_POW_MAX) {
+        return min_dist_to_zero_or_opposite;
+    }
+    int dist_to_same = get_tile_id_sep(src_tile_id, dest_tile_id);
+    return min(dist_to_same, min_dist_to_zero_or_opposite);
+}
+
+//assume neither is zero or empty
+int Pathfinder::get_tile_id_sep(uint8_t tile_id1, uint8_t tile_id2) {
+    int ans = abs(tile_id1 - tile_id2) * 2;
+    int sgn_change_penalty = int(get_true_tile_sign(tile_id1) * get_true_tile_sign(tile_id2) == -1) * ABSTRACT_DIST_SIGN_CHANGE_PENALTY;
+    return ans + sgn_change_penalty;
+}
+
+
+//DEPRECATED, see Pictures/greedy_is_not_optimal_when_parsing_sequence
+void Pathfinder::rrd_init_cad(Vector2i goal_pos) {
+    if (consistent_abstract_dists.find(goal_pos) != consistent_abstract_dists.end()) {
+        return;
+    }
+    consistent_abstract_dists.emplace(make_pair(goal_pos, make_tuple(pq_cad{}, us_cad{}, um{})));
+    std::get<0>(consistent_abstract_dists[goal_pos]).emplace(make_shared<CADNode>(goal_pos, 0, nullptr, Vector2i(0, 0)));
+    std::get<2>(consistent_abstract_dists[goal_pos]).emplace(goal_pos, 0);
+}
+
+//assume agent is compatible with goal_pos
+//similar to iterative deepening iterative deepening (both are O(r^3))
+//don't use rra bc agent_pos changes
+//consistent_abstract_dists becomes invalid if tilemap or tpl[agent type] changes
+//MAX_DEPTH IS DEPRECATED
+int Pathfinder::rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
+    assert(consistent_abstract_dists.find(goal_pos) != consistent_abstract_dists.end());
+
+    //check for stored ans
+    auto& [open, closed, best_gs] = consistent_abstract_dists[goal_pos];
+    shared_ptr<CADNode> dest = make_shared<CADNode>(agent_pos, 0, nullptr, Vector2i(0, 0));
+    auto it = closed.find(dest);
+    if (it != closed.end()) {
+        return (*it)->g;
+    }
+    uint8_t agent_type_id = get_type_id(agent_pos);
+
+    while (!open.empty()) {
+        shared_ptr<CADNode> curr = open.top();
+
+        //see Pictures/rrd_cad_expanding_closed_check_is_necessary
+        it = closed.find(curr);
+        if (it != closed.end()) {
+            continue;
+        }
+        closed.insert(curr);
+
+        if (curr->pos == agent_pos) {
+            //add to closed before returning
+            //don't pop curr so search is resumable
+            return curr->g;
+        }
+        open.pop();
+
+        /*
+        //don't generate nodes exceeding max_depth
+        if (curr->depth == max_depth) {
+            continue;
+        }*/
+
+        for (Vector2i dir : DIRECTIONS) {
+            Vector2i next_pos = curr->pos + dir;
+
+            if (!is_compatible(agent_type_id, get_back_id(next_pos))) {
+                continue;
+            }
+            shared_ptr<CADNode> neighbor = make_shared<CADNode>(next_pos, 0, curr, dir);
+            if (closed.find(neighbor) != closed.end()) {
+                continue;
+            }
+            neighbor->g = trace_cad(neighbor);
+            if (best_gs.find(next_pos) != best_gs.end() && best_gs[next_pos] <= neighbor->g) {
+                continue;
+            }
+            open.push(neighbor);
+            best_gs[next_pos] = neighbor->g;
+        }
+    }
+    return numeric_limits<int>::max();
+}
+
+//if both slide/split push_count == -1, h += 2
+//assume no incompatibility along path
+//assume n not null
+int Pathfinder::trace_cad(shared_ptr<CADNode> n) {
+    if (n->prev == nullptr) {
+        return 0;
+    }
+    unordered_set<Vector2i, Vector2iHasher> wildcards;
+    vector<uint8_t> sequence;
+    uint8_t agent_tile_id = get_tile_id(n->pos);
+    Vector2i last_fwd_dir = -n->prev_dir;
+    n = n->prev;
+    
+    while (n != nullptr) {
+        sequence.push_back(get_tile_id(n->pos));
+        if (is_perp(last_fwd_dir, n->prev_dir)) {
+
+        }
+        else {
+
+        }
+        n = n->prev;
+    }
+}
+
+bool Pathfinder::is_perp(Vector2i first, Vector2i second) {
+    return first.x * second.x + first.y * second.y == 0;
+}
+
+int Pathfinder::get_cad_push_count() {
+
+}
+
+void Pathfinder::rrd_clear_cad() {
+    consistent_abstract_dists.clear();
+}
+
+int Pathfinder::manhattan_dist(Vector2i pos1, Vector2i pos2) {
+    return abs(pos1.x - pos2.x) + abs(pos1.y - pos2.y);
 }
 
 
@@ -921,7 +1120,7 @@ uint8_t get_type_id(Vector2i pos) {
     return max(cells->get_cell_atlas_coords(LayerId::TILE, pos).y, 0);
 }
 
-//assume atlas isn't (-1, -1), cell has been generated
+//assume atlas isn't (-1, -1), aka cell has been generated
 uint8_t get_back_id(Vector2i pos) {
     return cells->get_cell_atlas_coords(LayerId::BACK, pos).x;
 }
