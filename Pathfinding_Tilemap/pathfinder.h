@@ -72,14 +72,17 @@ enum SearchId {
     HBJPD, //horizontally biased jump point dijkstra
 	MDA, //manhattan distance astar
     IADA, //inconsistent abstract distance astar
+    HBJPMDA,
+    HBJPIADA,
 	//IDA, IDIDJPA, LR, CBS, QUANT
+    SEARCH_END,
 };
 
 enum ActionId {
 	SLIDE = 0,
 	SPLIT,
     JUMP,
-	END,
+	ACTION_END,
 };
 
 //collision-free
@@ -247,11 +250,14 @@ protected:
 
 public:
     //check for numeric_limits<int>::max() to exit early if using an rrd heuristic
+    double get_sa_cumulative_search_time(int search_id);
     Array pathfind_sa(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_iada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_hbjpmda(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_hbjpiada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
 
     void set_player_pos(Vector2i pos);
     void set_player_last_dir(Vector2i dir);
@@ -330,6 +336,7 @@ extern TileMap* cells;
 extern unordered_map<uint8_t, int> tile_push_limits; //type_id, tpl
 extern unordered_map<Vector2i, tuple<pq_iad, um, um>, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, {open, closed, best_gs}; assume all entries are actively used
 extern unordered_map<Vector2i, tuple<pq_cad, us_cad, um>, Vector2iHasher> consistent_abstract_dists; //goal_pos, {open, closed, best_gs}; closed is necessary to store guaranteed optimal results
+extern array<double, SearchId::SEARCH_END> sa_cumulative_search_times; //search_id, cumulative time (ms)
 
 template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));

@@ -4,6 +4,7 @@
 #include <memory>
 #include <random>
 #include <string>
+#include <chrono>
 #include "pathfinder.h"
 
 using namespace std;
@@ -17,6 +18,7 @@ TileMap* cells;
 unordered_map<uint8_t, int> tile_push_limits;
 unordered_map<Vector2i, tuple<pq_iad, um, um>, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, {open, closed, best_gs}; assume all entries are actively used
 unordered_map<Vector2i, tuple<pq_cad, us_cad, um>, Vector2iHasher> consistent_abstract_dists; //goal_pos, {open, closed, best_gs}; closed is necessary to store guaranteed optimal results
+array<double, SearchId::SEARCH_END> sa_cumulative_search_times{}; //search_id, cumulative time (ms); value-init to zero
 
 void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_player_pos", "pos"), &Pathfinder::set_player_pos);
@@ -24,7 +26,10 @@ void Pathfinder::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_tilemap", "t"), &Pathfinder::set_tilemap);
     ClassDB::bind_method(D_METHOD("set_tile_push_limits", "tpls"), &Pathfinder::set_tile_push_limits);
     ClassDB::bind_method(D_METHOD("generate_hash_keys"), &Pathfinder::generate_hash_keys);
+
+    ClassDB::bind_method(D_METHOD("get_sa_cumulative_search_time", "search_id"), &Pathfinder::get_sa_cumulative_search_time);
     ClassDB::bind_method(D_METHOD("pathfind_sa", "search_id", "max_depth", "min", "max", "start", "end"), &Pathfinder::pathfind_sa);
+
     ClassDB::bind_method(D_METHOD("rrd_init_iad", "goal_pos"), &Pathfinder::rrd_init_iad);
     ClassDB::bind_method(D_METHOD("rrd_init_cad", "goal_pos"), &Pathfinder::rrd_init_cad);
     ClassDB::bind_method(D_METHOD("rrd_resume_iad", "goal_pos", "node_pos", "agent_type_id"), &Pathfinder::rrd_resume_iad);
@@ -450,7 +455,7 @@ shared_ptr<SANode> SANode::try_jump(Vector2i dir, Vector2i lv_end, bool allow_ty
                 return curr_jp;
             }
 
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::END; ++action_id) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
                 //store next_action result in curr_jp->neighbors and if valid, return curr_jp
                 //!(vertical && next_dir == dir && empty) bc "next empty check"
                 if (action_id == ActionId::JUMP && (horizontal || !next_empty_and_regular)) {
@@ -500,11 +505,17 @@ shared_ptr<SANode> SANode::get_jump_point(Vector2i dir, Vector2i jp_pos, int jum
 
 //prune all actions in dir
 void SANode::prune_action_ids(Vector2i dir) {
-    for (int action_id=ActionId::SLIDE; action_id != ActionId::END; ++action_id) {
+    for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
         neighbors[Vector3i(dir.x, dir.y, action_id)] = {true, weak_ptr<SANode>()};
     }
 }
 
+
+//for testing; return search_id's cumulative search time in ms
+double Pathfinder::get_sa_cumulative_search_time(int search_id) {
+    assert(search_id >= 0 && search_id < SearchId::SEARCH_END);
+    return sa_cumulative_search_times[search_id];
+}
 
 //use an rrd heuristic search for enclosure check
 Array Pathfinder::pathfind_sa(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
@@ -513,18 +524,38 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, Vector2i min, Vector
         return Array();
     }
 
+    //for timing
+    auto start_time = chrono::high_resolution_clock::now();
+
+    Array ans;
     switch (search_id) {
         case SearchId::DIJKSTRA:
-            return pathfind_sa_dijkstra(max_depth, min, max, start, end);
+            ans = pathfind_sa_dijkstra(max_depth, min, max, start, end);
+            break;
         case SearchId::HBJPD:
-            return pathfind_sa_hbjpd(max_depth, min, max, start, end);
+            ans = pathfind_sa_hbjpd(max_depth, min, max, start, end);
+            break;
         case SearchId::MDA:
-            return pathfind_sa_mda(max_depth, min, max, start, end);
+            ans = pathfind_sa_mda(max_depth, min, max, start, end);
+            break;
         case SearchId::IADA:
-            return pathfind_sa_iada(max_depth, min, max, start, end);
+            ans = pathfind_sa_iada(max_depth, min, max, start, end);
+            break;
+        case SearchId::HBJPMDA:
+            ans = pathfind_sa_hbjpmda(max_depth, min, max, start, end);
+            break;
+        case SearchId::HBJPIADA:
+            ans = pathfind_sa_hbjpiada(max_depth, min, max, start, end);
+            break;
         default:
-            return pathfind_sa_hbjpd(max_depth, min, max, start, end);
+            ans = pathfind_sa_hbjpd(max_depth, min, max, start, end);
     }
+
+    //timing
+    auto end_time = chrono::high_resolution_clock::now();
+    sa_cumulative_search_times[search_id] += chrono::duration<double, milli>(end_time - start_time).count();
+
+    return ans;
 }
 
 //don't generate from nodes at max_depth or if generate, don't do numeric_limits<int>::max() heuristic early exit until max_depth check
@@ -585,9 +616,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
                 //0, 0, 0
                 //P1, 1, 1
                 //both {(1, 0, 0), (1, 0, 1)} and {(0, 1, 0), (1, 0, 0), (1, 0, 0), (0, -1, 0)} result in same node
-                if (closed.find(neighbor) != closed.end()) {
-                    continue;
-                }
+                //NAH; closed contains neighbor -> neighbor has been generated with optimal dist -> neighbor is pruned by best_dist check
                 assert(neighbor->f == curr->f); //every node generates at most once, so there is no double-increment
                 ++(neighbor->f); //update f/g/h in pathfind funcs bc they could be used differently in each func
 
@@ -635,7 +664,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
             if (!curr->get_dist_to_lv_edge(dir)) {
                 continue;
             }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::END; ++action_id) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
                 //generate split in all dirs, don't generate slide if next tile is empty_and_regular
                 //generate jump iff next tile is empty_and_regular and dir is natural - handled in jump()
                 //only search in dir of natural neighbors (except first node) - handled via pruning
@@ -648,12 +677,10 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
                 if (!neighbor) {
                     continue;
                 }
-                if (closed.find(neighbor) != closed.end()) {
-                    continue;
-                }
+                //closed contains neighbor -> neighbor has been generated with optimal dist -> neighbor is pruned by best_dist check
                 neighbor->f += neighbor->prev_actions.size();
 
-                //catch nodes that exceed max_depth as early as possible
+                //place check here to catch nodes that exceed max_depth as early as possible
                 //since open << closed for typical search, generating check is not much more expensive than expanding check
                 if (neighbor->f > max_depth) {
                     continue;
@@ -713,7 +740,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
                     continue;
                 }
 
-                //check if neighbor closed (see Pictures/mda_closed_check_is_necessary)
+                //if closed check returns positive, neighbor heuristic calculation is skipped; worth it? idk
                 if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
@@ -743,7 +770,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
 //f can decrease
 //closed is unnecessary; shared_ptrs are stored in best_dists, so trace_path() will still work
 //open and returned path are not necessarily optimal
-//if neighbor valid and h(neighbor) == numeric_limits<int>::max(), exit early bc no path exists
+//if h(first) == numeric_limits<int>::max(), exit early bc no path exists
 Array Pathfinder::pathfind_sa_iada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
     unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
@@ -805,6 +832,141 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, Vector2i min, Vector2i max, Ve
     return Array();
 }
 
+//closed optimal, open not
+Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
+    unordered_set<shared_ptr<SANode>, SANodeHashGetter, SANodeEquator> closed;
+    unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+    Vector2i lv_end = end - min;
+
+    shared_ptr<SANode> first = make_shared<SANode>();
+    first->init_lv_pos(start - min);
+    first->init_lv(min, max, start);
+    first->h = manhattan_dist(first->lv_pos, lv_end);
+    first->f = first->h;
+    //first can have prev_actions and prev_push_count uninitialized
+    open.push(first);
+    best_dists[first] = first->g;
+
+    while (!open.empty()) {
+        shared_ptr<SANode> curr = open.top();
+
+        if (curr->lv_pos == lv_end) {
+            return curr->trace_path(curr->g);
+        }
+        //open may receive duplicate nodes (see Pictures/mda_closed_check_is_necessary, replace agent w/ 2 and empty tiles w/ 1)
+        open.pop();
+        if (closed.find(curr) != closed.end()) {
+            continue;
+        }
+        closed.insert(curr);
+
+        for (Vector2i dir : DIRECTIONS) {
+            if (!curr->get_dist_to_lv_edge(dir)) {
+                continue;
+            }
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
+                Vector3i action(dir.x, dir.y, action_id);
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
+
+                if (!neighbor) {
+                    continue;
+                }
+
+                //closed check to skip heuristic calculation
+                if (closed.find(neighbor) != closed.end()) {
+                    continue;
+                }
+                ++(neighbor->g);
+                neighbor->h = manhattan_dist(neighbor->lv_pos, lv_end);
+                neighbor->f = neighbor->g + neighbor->h;
+
+                //manhattan is consistent, so final path_len >= curr->f and f is monotonically increasing
+                //f can increase more than one unit at a time, so == check when expanding doesn't work
+                //if curr->g == max_depth, neighbor->g > max_depth, neighbor->f > max_depth, so no nodes are generated from max_depth
+                if (neighbor->f > max_depth) {
+                    continue;
+                }
+
+                auto it = best_dists.find(neighbor);
+                if (it != best_dists.end() && (*it).second <= neighbor->g) {
+                    continue;
+                }
+                open.push(neighbor);
+                best_dists[neighbor] = neighbor->g;
+            }
+        }
+    }
+    return Array();
+}
+
+//open and returned path are not necessarily optimal
+//if h(first) == numeric_limits<int>::max(), exit early bc no path exists
+Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
+    unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+    Vector2i lv_end = end - min;
+    uint8_t agent_type_id = get_type_id(start);
+    rrd_init_iad(end);
+
+    shared_ptr<SANode> first = make_shared<SANode>();
+    first->init_lv_pos(start - min);
+    first->init_lv(min, max, start);
+    first->h = rrd_resume_iad(end, start, agent_type_id);
+
+    //enclosed goal check
+    if (first->h == numeric_limits<int>::max()) {
+        return Array();
+    }
+
+    first->f = first->h;
+    //first can have prev_actions and prev_push_count uninitialized
+    open.push(first);
+    best_dists[first] = first->g;
+
+    while (!open.empty()) {
+        shared_ptr<SANode> curr = open.top();
+
+        if (curr->lv_pos == lv_end) {
+            return curr->trace_path(curr->g);
+        }
+        open.pop();
+
+        if (curr->g == max_depth) {
+            continue;
+        }
+
+        for (Vector2i dir : DIRECTIONS) {
+            if (!curr->get_dist_to_lv_edge(dir)) {
+                continue;
+            }
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
+                Vector3i action(dir.x, dir.y, action_id);
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
+
+                if (!neighbor) {
+                    continue;
+                }
+                ++(neighbor->g);
+                neighbor->h = rrd_resume_iad(end, min + neighbor->lv_pos, agent_type_id);
+                neighbor->f = neighbor->g + neighbor->h;
+
+                if (neighbor->g > max_depth) {
+                    continue;
+                }
+
+                auto it = best_dists.find(neighbor);
+                if (it != best_dists.end() && (*it).second <= neighbor->g) {
+                    continue;
+                }
+                open.push(neighbor);
+                best_dists[neighbor] = neighbor->g;
+            }
+        }
+    }
+    return Array();
+}
+
 void Pathfinder::set_player_pos(Vector2i pos) {
     player_pos = pos;
 }
@@ -831,7 +993,7 @@ void Pathfinder::generate_hash_keys() {
         return;
     }
 
-	std::mt19937_64 generator(0); //fixed seed is okay
+	std::mt19937_64 generator(2048); //fixed seed is okay
 	std::uniform_int_distribution<uint64_t> distribution(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max());
 
     for (int y=0; y < MAX_SEARCH_HEIGHT; ++y) {
