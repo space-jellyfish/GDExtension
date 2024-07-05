@@ -620,10 +620,24 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
                 assert(neighbor->f == curr->f); //every node generates at most once, so there is no double-increment
                 ++(neighbor->f); //update f/g/h in pathfind funcs bc they could be used differently in each func
 
-                //check if neighbor has been generated with shorter dist
                 auto it = best_dists.find(neighbor);
-                if (it != best_dists.end() && (*it).second <= neighbor->f) {
-                    continue;
+                if (it != best_dists.end()) {
+                    //neighbor was previously generated
+                    if (neighbor->f >= (*it).second) {
+                        //path is no better
+                        continue;
+                    }
+                    /* not possible bc open is optimal
+                    else {
+                        //path is strictly better, update heuristic and prev stuff and repush to open
+                        (*it).first->f = neighbor->f;
+                        (*it).first->prev = curr;
+                        (*it).first->prev_actions = {action};
+                        (*it).first->prev_push_count = neighbor->prev_push_count;
+                        //note this breaks weak_ptrs to neighbor
+                        //there are no shared_ptrs to neighbor yet, so this is fine
+                        neighbor = (*it).first;
+                    }*/
                 }
                 open.push(neighbor);
                 best_dists[neighbor] = neighbor->f;
@@ -687,8 +701,17 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
                 }
 
                 auto it = best_dists.find(neighbor);
-                if (it != best_dists.end() && (*it).second <= neighbor->f) {
-                    continue;
+                if (it != best_dists.end()) {
+                    if (neighbor->f >= (*it).second) {
+                        continue;
+                    }
+                    else {
+                        (*it).first->f = neighbor->f;
+                        (*it).first->prev = curr;
+                        (*it).first->prev_actions = neighbor->prev_actions;
+                        (*it).first->prev_push_count = neighbor->prev_push_count;
+                        neighbor = (*it).first;
+                    }
                 }
                 open.push(neighbor);
                 best_dists[neighbor] = neighbor->f;
@@ -756,8 +779,19 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
                 }
 
                 auto it = best_dists.find(neighbor);
-                if (it != best_dists.end() && (*it).second <= neighbor->g) {
-                    continue;
+                if (it != best_dists.end()) {
+                    if (neighbor->g >= (*it).second) {
+                        continue;
+                    }
+                    else {
+                        (*it).first->g = neighbor->g;
+                        (*it).first->h = neighbor->h;
+                        (*it).first->f = neighbor->f;
+                        (*it).first->prev = curr;
+                        (*it).first->prev_actions = neighbor->prev_actions;
+                        (*it).first->prev_push_count = neighbor->prev_push_count;
+                        neighbor = (*it).first;
+                    }
                 }
                 open.push(neighbor);
                 best_dists[neighbor] = neighbor->g;
@@ -821,8 +855,19 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, Vector2i min, Vector2i max, Ve
                 neighbor->f = neighbor->g + neighbor->h;
 
                 auto it = best_dists.find(neighbor);
-                if (it != best_dists.end() && (*it).second <= neighbor->g) {
-                    continue;
+                if (it != best_dists.end()) {
+                    if (neighbor->g >= (*it).second) {
+                        continue;
+                    }
+                    else {
+                        (*it).first->g = neighbor->g;
+                        (*it).first->h = neighbor->h;
+                        (*it).first->f = neighbor->f;
+                        (*it).first->prev = curr;
+                        (*it).first->prev_actions = neighbor->prev_actions;
+                        (*it).first->prev_push_count = neighbor->prev_push_count;
+                        neighbor = (*it).first;
+                    }
                 }
                 open.push(neighbor);
                 best_dists[neighbor] = neighbor->g;
@@ -889,8 +934,19 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, Vector2i min, Vector2i max,
                 }
 
                 auto it = best_dists.find(neighbor);
-                if (it != best_dists.end() && (*it).second <= neighbor->g) {
-                    continue;
+                if (it != best_dists.end()) {
+                    if (neighbor->g >= (*it).second) {
+                        continue;
+                    }
+                    else {
+                        (*it).first->g = neighbor->g;
+                        (*it).first->h = neighbor->h;
+                        (*it).first->f = neighbor->f;
+                        (*it).first->prev = curr;
+                        (*it).first->prev_actions = neighbor->prev_actions;
+                        (*it).first->prev_push_count = neighbor->prev_push_count;
+                        neighbor = (*it).first;
+                    }
                 }
                 open.push(neighbor);
                 best_dists[neighbor] = neighbor->g;
@@ -956,8 +1012,19 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, Vector2i min, Vector2i max
                 }
 
                 auto it = best_dists.find(neighbor);
-                if (it != best_dists.end() && (*it).second <= neighbor->g) {
-                    continue;
+                if (it != best_dists.end()) {
+                    if (neighbor->g >= (*it).second) {
+                        continue;
+                    }
+                    else {
+                        (*it).first->g = neighbor->g;
+                        (*it).first->h = neighbor->h;
+                        (*it).first->f = neighbor->f;
+                        (*it).first->prev = curr;
+                        (*it).first->prev_actions = neighbor->prev_actions;
+                        (*it).first->prev_push_count = neighbor->prev_push_count;
+                        neighbor = (*it).first;
+                    }
                 }
                 open.push(neighbor);
                 best_dists[neighbor] = neighbor->g;
