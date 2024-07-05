@@ -850,7 +850,8 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, Vector2i min, Vector2i max, Ve
                 if (!neighbor) {
                     continue;
                 }
-                ++(neighbor->g);
+                //nodes can generate more than once, ++(neighbor->g) can cause double increment
+                neighbor->g = curr->g + 1;
                 neighbor->h = rrd_resume_iad(end, min + neighbor->lv_pos, agent_type_id);
                 neighbor->f = neighbor->g + neighbor->h;
 
@@ -922,7 +923,7 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, Vector2i min, Vector2i max,
                 if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
-                ++(neighbor->g);
+                neighbor->g += neighbor->prev_actions.size();
                 neighbor->h = manhattan_dist(neighbor->lv_pos, lv_end);
                 neighbor->f = neighbor->g + neighbor->h;
 
@@ -1003,7 +1004,8 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, Vector2i min, Vector2i max
                 if (!neighbor) {
                     continue;
                 }
-                ++(neighbor->g);
+                //nodes can generate more than once, += can cause double increment
+                neighbor->g = curr->g + neighbor->prev_actions.size();
                 neighbor->h = rrd_resume_iad(end, min + neighbor->lv_pos, agent_type_id);
                 neighbor->f = neighbor->g + neighbor->h;
 
