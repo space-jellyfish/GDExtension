@@ -633,7 +633,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
                         (*it).first->f = neighbor->f;
                         //since curr->f <= (*it).first->f, (*it).first cannot be ancestor of curr, and updating prev won't create loop
                         (*it).first->prev = curr;
-                        (*it).first->prev_actions = {action};
+                        (*it).first->prev_actions = neighbor->prev_actions;
                         (*it).first->prev_push_count = neighbor->prev_push_count;
                         //note this breaks weak_ptrs to neighbor
                         //there are no shared_ptrs to neighbor yet, so this is fine
