@@ -28,7 +28,7 @@ void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("generate_hash_keys"), &Pathfinder::generate_hash_keys);
 
     ClassDB::bind_method(D_METHOD("get_sa_cumulative_search_time", "search_id"), &Pathfinder::get_sa_cumulative_search_time);
-    ClassDB::bind_method(D_METHOD("pathfind_sa", "search_id", "max_depth", "min", "max", "start", "end"), &Pathfinder::pathfind_sa);
+    ClassDB::bind_method(D_METHOD("pathfind_sa", "search_id", "max_depth", "allow_type_change", "min", "max", "start", "end"), &Pathfinder::pathfind_sa);
 
     ClassDB::bind_method(D_METHOD("rrd_init_iad", "goal_pos"), &Pathfinder::rrd_init_iad);
     ClassDB::bind_method(D_METHOD("rrd_init_cad", "goal_pos"), &Pathfinder::rrd_init_cad);
@@ -518,7 +518,7 @@ double Pathfinder::get_sa_cumulative_search_time(int search_id) {
 }
 
 //use an rrd heuristic search for enclosure check
-Array Pathfinder::pathfind_sa(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa(int search_id, int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     //type check
     if (!is_compatible(get_type_id(start), get_back_id(end))) {
         return Array();
@@ -530,25 +530,25 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, Vector2i min, Vector
     Array ans;
     switch (search_id) {
         case SearchId::DIJKSTRA:
-            ans = pathfind_sa_dijkstra(max_depth, min, max, start, end);
+            ans = pathfind_sa_dijkstra(max_depth, allow_type_change, min, max, start, end);
             break;
         case SearchId::HBJPD:
-            ans = pathfind_sa_hbjpd(max_depth, min, max, start, end);
+            ans = pathfind_sa_hbjpd(max_depth, allow_type_change, min, max, start, end);
             break;
         case SearchId::MDA:
-            ans = pathfind_sa_mda(max_depth, min, max, start, end);
+            ans = pathfind_sa_mda(max_depth, allow_type_change, min, max, start, end);
             break;
         case SearchId::IADA:
-            ans = pathfind_sa_iada(max_depth, min, max, start, end);
+            ans = pathfind_sa_iada(max_depth, allow_type_change, min, max, start, end);
             break;
         case SearchId::HBJPMDA:
-            ans = pathfind_sa_hbjpmda(max_depth, min, max, start, end);
+            ans = pathfind_sa_hbjpmda(max_depth, allow_type_change, min, max, start, end);
             break;
         case SearchId::HBJPIADA:
-            ans = pathfind_sa_hbjpiada(max_depth, min, max, start, end);
+            ans = pathfind_sa_hbjpiada(max_depth, allow_type_change, min, max, start, end);
             break;
         default:
-            ans = pathfind_sa_hbjpd(max_depth, min, max, start, end);
+            ans = pathfind_sa_hbjpd(max_depth, allow_type_change, min, max, start, end);
     }
 
     //timing
@@ -562,7 +562,7 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, Vector2i min, Vector
 //assume no type_id change allowed
 //open nodes are optimal since edges are unit cost
 //closed nodes are optimal bc dijkstra
-Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     //NEEDS PROFILING with deque
     //use ptrs bc prev requires a fixed addr, faster to copy, duplicates in open use less mem
     //use shared_ptr instead of unique_ptr bc prev/neighbors also require it
@@ -605,7 +605,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i action(dir.x, dir.y, action_id);
-                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;
@@ -651,7 +651,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
 
 //assume no type_id change
 //open nodes not necessarily optimal
-Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
     unordered_set<shared_ptr<SANode>, SANodeHashGetter, SANodeEquator> closed;
     unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists;
@@ -688,7 +688,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
                     continue;
                 }
                 Vector3i action = Vector3i(dir.x, dir.y, action_id);
-                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;
@@ -725,7 +725,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, V
 
 //open not necessarily optimal
 //closed optimal bc heuristic consistent (see SA lec5)
-Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
     unordered_set<shared_ptr<SANode>, SANodeHashGetter, SANodeEquator> closed;
     unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
@@ -759,7 +759,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i action(dir.x, dir.y, action_id);
-                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;
@@ -807,7 +807,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vec
 //closed is unnecessary; shared_ptrs are stored in best_dists, so trace_path() will still work
 //open and returned path are not necessarily optimal
 //if h(first) == numeric_limits<int>::max(), exit early bc no path exists
-Array Pathfinder::pathfind_sa_iada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
     unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
@@ -847,7 +847,7 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, Vector2i min, Vector2i max, Ve
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i action(dir.x, dir.y, action_id);
-                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;
@@ -881,7 +881,7 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, Vector2i min, Vector2i max, Ve
 }
 
 //closed optimal, open not
-Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
     unordered_set<shared_ptr<SANode>, SANodeHashGetter, SANodeEquator> closed;
     unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
@@ -915,7 +915,7 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, Vector2i min, Vector2i max,
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
                 Vector3i action(dir.x, dir.y, action_id);
-                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;
@@ -961,7 +961,7 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, Vector2i min, Vector2i max,
 
 //open and returned path are not necessarily optimal
 //if h(first) == numeric_limits<int>::max(), exit early bc no path exists
-Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     priority_queue<shared_ptr<SANode>, vector<shared_ptr<SANode>>, SANodeComparer> open;
     unordered_map<shared_ptr<SANode>, int, SANodeHashGetter, SANodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
@@ -1001,7 +1001,7 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, Vector2i min, Vector2i max
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
                 Vector3i action(dir.x, dir.y, action_id);
-                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, false); //don't allow type change
+                shared_ptr<SANode> neighbor = curr->try_action(action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;

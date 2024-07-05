@@ -251,13 +251,13 @@ protected:
 public:
     //check for numeric_limits<int>::max() to exit early if using an rrd heuristic
     double get_sa_cumulative_search_time(int search_id);
-    Array pathfind_sa(int search_id, int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_hbjpd(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_mda(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_iada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_hbjpmda(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_hbjpiada(int max_depth, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa(int search_id, int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_iada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
 
     void set_player_pos(Vector2i pos);
     void set_player_last_dir(Vector2i dir);
