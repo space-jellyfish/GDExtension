@@ -629,8 +629,9 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
                     }
                     /* not possible bc open is optimal
                     else {
-                        //path is strictly better, update heuristic and prev stuff and repush to open
+                        //path is strictly better, update heuristics and prev stuff and repush to open
                         (*it).first->f = neighbor->f;
+                        //since curr->f <= (*it).first->f, (*it).first cannot be ancestor of curr, and updating prev won't create loop
                         (*it).first->prev = curr;
                         (*it).first->prev_actions = {action};
                         (*it).first->prev_push_count = neighbor->prev_push_count;
@@ -639,6 +640,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, Vector2i min, Vector2i max
                         neighbor = (*it).first;
                     }*/
                 }
+                //if neighbor hasn't been visited, it can't be ancestor of curr => no loop
                 open.push(neighbor);
                 best_dists[neighbor] = neighbor->f;
             }
