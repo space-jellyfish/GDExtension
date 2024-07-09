@@ -28,6 +28,7 @@ void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("generate_hash_keys"), &Pathfinder::generate_hash_keys);
 
     ClassDB::bind_method(D_METHOD("get_sa_cumulative_search_time", "search_id"), &Pathfinder::get_sa_cumulative_search_time);
+    ClassDB::bind_method(D_METHOD("clear_sa_cumulative_search_times"), &Pathfinder::clear_sa_cumulative_search_times);
     ClassDB::bind_method(D_METHOD("pathfind_sa", "search_id", "max_depth", "allow_type_change", "min", "max", "start", "end"), &Pathfinder::pathfind_sa);
 
     ClassDB::bind_method(D_METHOD("rrd_clear_iad"), &Pathfinder::rrd_clear_iad);
@@ -388,6 +389,7 @@ shared_ptr<SASearchNode> SASearchNode::try_jump(Vector2i dir, Vector2i lv_end, b
     int dist_to_lv_edge = sanode->get_dist_to_lv_edge(dir);
     int curr_dist = 1;
     next_dirs.emplace_back(dir, curr_dist < dist_to_lv_edge, false);
+    shared_ptr<SASearchNode> curr_jp = make_shared<SASearchNode>();
 
     while (curr_dist <= dist_to_lv_edge) {
         uint16_t curr_stuff_id = sanode->get_lv_sid(curr_pos);
@@ -397,8 +399,8 @@ shared_ptr<SASearchNode> SASearchNode::try_jump(Vector2i dir, Vector2i lv_end, b
             return nullptr;
         }
 
-        //get current jump point
-        shared_ptr<SASearchNode> curr_jp = get_jump_point(dir, curr_pos, curr_dist);
+        //get current jump point; reuse sanode if possible
+        curr_jp = get_jump_point(curr_jp->sanode, dir, curr_pos, curr_dist);
 
         //check lv_end
         if (curr_pos == lv_end) {
@@ -460,6 +462,7 @@ shared_ptr<SASearchNode> SASearchNode::try_jump(Vector2i dir, Vector2i lv_end, b
                 }
 
                 Vector3i next_action = Vector3i(next_dir.x, next_dir.y, action_id);
+                //this does not create any permanent refs to curr_jp->sanode, so it can be reused for the next curr_jp
                 shared_ptr<SASearchNode> neighbor = curr_jp->try_action(next_action, lv_end, allow_type_change);
                 if (neighbor) {
                     if (!horizontal || next_dir == dir || action_id != ActionId::SLIDE || blocked || neighbor->prev_push_count) {
@@ -479,14 +482,15 @@ shared_ptr<SASearchNode> SASearchNode::try_jump(Vector2i dir, Vector2i lv_end, b
     return nullptr;
 }
 
-//assume jp_pos != lv_pos
+//assume jp_pos != src_lv_pos
 //assume jp_pos is within bounds
-shared_ptr<SASearchNode> SASearchNode::get_jump_point(Vector2i dir, Vector2i jp_pos, unsigned int jump_dist) {
+shared_ptr<SASearchNode> SASearchNode::get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist) {
     shared_ptr<SASearchNode> ans = make_shared<SASearchNode>();
-    ans->sanode = make_shared<SANode>(*sanode);
+    ans->sanode = prev_sanode ? prev_sanode : make_shared<SANode>(*sanode);
+    Vector2i src_lv_pos = ans->sanode->lv_pos;
     ans->sanode->set_lv_pos(jp_pos);
-    ans->sanode->set_lv_sid(jp_pos, get_jumped_stuff_id(sanode->get_lv_sid(sanode->lv_pos), sanode->get_lv_sid(jp_pos)));
-    ans->sanode->clear_lv_sid(sanode->lv_pos);
+    ans->sanode->set_lv_sid(jp_pos, get_jumped_stuff_id(ans->sanode->get_lv_sid(src_lv_pos), ans->sanode->get_lv_sid(jp_pos)));
+    ans->sanode->clear_lv_sid(src_lv_pos);
 
     //prev stuff
     Vector3i action = Vector3i(dir.x, dir.y, ActionId::SLIDE);
@@ -569,6 +573,10 @@ void SASearchNode::transfer_neighbors(shared_ptr<SASearchNode> better_dist, int 
 double Pathfinder::get_sa_cumulative_search_time(int search_id) {
     //assert(search_id >= 0 && search_id < SASearchId::SEARCH_END);
     return sa_cumulative_search_times[search_id];
+}
+
+void Pathfinder::clear_sa_cumulative_search_times() {
+    fill(sa_cumulative_search_times.begin(), sa_cumulative_search_times.end(), 0);
 }
 
 //use an rrd heuristic search for enclosure check

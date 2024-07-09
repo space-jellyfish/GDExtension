@@ -221,7 +221,7 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     shared_ptr<SASearchNode> try_action(Vector3i action, Vector2i lv_end, bool allow_type_change);
 
     shared_ptr<SASearchNode> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change);
-    shared_ptr<SASearchNode> get_jump_point(Vector2i dir, Vector2i jp_pos, unsigned int jump_dist);
+    shared_ptr<SASearchNode> get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist);
     void prune_invalid_action_ids(Vector2i dir);
     void prune_backtrack(Vector2i dir);
     void transfer_neighbors(shared_ptr<SASearchNode> better_dist, int dist_improvement);
@@ -276,6 +276,7 @@ protected:
 public:
     //check for numeric_limits<int>::max() to exit early if using an rrd heuristic
     double get_sa_cumulative_search_time(int search_id);
+    void clear_sa_cumulative_search_times();
     Array pathfind_sa(int search_id, int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
