@@ -357,7 +357,7 @@ shared_ptr<SASearchNode> SASearchNode::try_action(Vector3i action, Vector2i lv_e
 }
 
 //assume immediate neighbor is in_bounds
-//get_jump_point() correctly inits prev_push_count to 0
+//updates prev, prev_actions, prev_push_count
 //doesn't change agent type/tile_id
 //only jump through empty_and_regular tiles
 //see Devlog/jump_conditions for details
