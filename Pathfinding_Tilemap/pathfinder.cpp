@@ -356,29 +356,22 @@ shared_ptr<SASearchNode> SASearchNode::try_action(Vector3i action, Vector2i lv_e
     return ans;
 }
 
+//assume immediate neighbor is in_bounds
 //get_jump_point() correctly inits prev_push_count to 0
 //doesn't change agent type/tile_id
 //only jump through empty_and_regular tiles
 //see Devlog/jump_conditions for details
 //when generating from jp, generate split in all dirs, generate slide iff next tile isn't empty_and_regular
 shared_ptr<SASearchNode> SASearchNode::try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change) {
-    //check bound
-    int dist_to_lv_edge = sanode->get_dist_to_lv_edge(dir);
-    if (!dist_to_lv_edge) {
-        return nullptr;
-    }
-    int curr_dist = 1;
-    Vector2i curr_pos = sanode->lv_pos + dir;
-
+    //check bounds NAH
     //check empty
+    Vector2i curr_pos = sanode->lv_pos + dir;
     if (!is_tile_empty_and_regular(sanode->get_lv_sid(curr_pos))) {
         return nullptr;
     }
 
     //init next_dirs
-    uint16_t src_stuff_id = sanode->get_lv_sid(sanode->lv_pos);
-    uint8_t src_type_id = get_type_id(src_stuff_id);
-    uint8_t src_tile_id = get_tile_id(src_stuff_id);
+    uint8_t src_type_id = get_type_id(sanode->get_lv_sid(sanode->lv_pos));
     bool horizontal = (H_DIRS.find(dir) != H_DIRS.end());
     vector<tuple<Vector2i, bool, bool>> next_dirs; //next_dir, in_bounds, blocked (unused if next_dir == dir)
     Vector2i perp_dir1 = horizontal ? Vector2i(0, 1) : Vector2i(1, 0);
@@ -389,9 +382,11 @@ shared_ptr<SASearchNode> SASearchNode::try_jump(Vector2i dir, Vector2i lv_end, b
             continue;
         }
         uint16_t next_stuff_id = sanode->get_lv_sid(sanode->lv_pos + next_dir);
-        bool blocked = !(is_tile_unsigned_and_regular(next_stuff_id) && is_compatible(src_type_id, get_back_id(next_stuff_id)));
+        bool blocked = !(is_tile_empty_and_regular(next_stuff_id) && is_compatible(src_type_id, get_back_id(next_stuff_id)));
         next_dirs.emplace_back(next_dir, true, blocked);
     }
+    int dist_to_lv_edge = sanode->get_dist_to_lv_edge(dir);
+    int curr_dist = 1;
     next_dirs.emplace_back(dir, curr_dist < dist_to_lv_edge, false);
 
     while (curr_dist <= dist_to_lv_edge) {
