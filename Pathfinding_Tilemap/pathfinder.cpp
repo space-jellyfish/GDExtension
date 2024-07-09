@@ -28,7 +28,7 @@ void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("generate_hash_keys"), &Pathfinder::generate_hash_keys);
 
     ClassDB::bind_method(D_METHOD("get_sa_cumulative_search_time", "search_id"), &Pathfinder::get_sa_cumulative_search_time);
-    ClassDB::bind_method(D_METHOD("clear_sa_cumulative_search_times"), &Pathfinder::clear_sa_cumulative_search_times);
+    ClassDB::bind_method(D_METHOD("reset_sa_cumulative_search_times"), &Pathfinder::reset_sa_cumulative_search_times);
     ClassDB::bind_method(D_METHOD("pathfind_sa", "search_id", "max_depth", "allow_type_change", "min", "max", "start", "end"), &Pathfinder::pathfind_sa);
 
     ClassDB::bind_method(D_METHOD("rrd_clear_iad"), &Pathfinder::rrd_clear_iad);
@@ -575,7 +575,7 @@ double Pathfinder::get_sa_cumulative_search_time(int search_id) {
     return sa_cumulative_search_times[search_id];
 }
 
-void Pathfinder::clear_sa_cumulative_search_times() {
+void Pathfinder::reset_sa_cumulative_search_times() {
     fill(sa_cumulative_search_times.begin(), sa_cumulative_search_times.end(), 0);
 }
 

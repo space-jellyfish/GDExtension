@@ -276,7 +276,7 @@ protected:
 public:
     //check for numeric_limits<int>::max() to exit early if using an rrd heuristic
     double get_sa_cumulative_search_time(int search_id);
-    void clear_sa_cumulative_search_times();
+    void reset_sa_cumulative_search_times();
     Array pathfind_sa(int search_id, int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
