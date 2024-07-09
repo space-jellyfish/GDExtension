@@ -1495,16 +1495,16 @@ int get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id) {
         return 1;
     }
     if (is_tile_unsigned(src_tile_id)) {
-        return get_tile_id_sep(TileId::ZERO, dest_tile_id);
+        return 1 + get_tile_id_sep(TileId::ZERO, dest_tile_id);
     }
     int dist_to_zero = get_tile_id_sep(src_tile_id, TileId::ZERO);
     int dist_to_opposite = get_tile_id_sep(src_tile_id, get_opposite_tile_id(dest_tile_id));
     int min_dist_to_zero_or_opposite = min(dist_to_zero, dist_to_opposite);
     if (get_signed_tile_pow(dest_tile_id) == TILE_POW_MAX) {
-        return min_dist_to_zero_or_opposite;
+        return 1 + min_dist_to_zero_or_opposite;
     }
     int dist_to_same = get_tile_id_sep(src_tile_id, dest_tile_id);
-    return min(dist_to_same, min_dist_to_zero_or_opposite);
+    return 1 + min(dist_to_same, min_dist_to_zero_or_opposite);
 }
 
 //assume neither is zero or empty
