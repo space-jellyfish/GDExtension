@@ -231,3 +231,133 @@ int zero_count = 0; //number of regular zeros from lv_pos+dir to jp_pos inclusiv
             return nullptr;
         }
 */
+
+/*
+//DEPRECATED: requires weak_ptrs for pruned SANodes to be set correctly, otherwise some nodes might not get unpruned; but are they?
+clear_neighbor_prunes()
+
+//store weak_ptr even if pruned to determine whether or not to unprune? NAH
+SANode::neighbors
+*/
+
+/* closed stuff
+unordered_set<shared_ptr<SANode>, SANodeHashGetter, SANodeEquator> closed;
+//closed contains neighbor -> neighbor has been generated with optimal dist -> neighbor is pruned by best_dist check
+
+from mda():
+                //if closed check returns positive, neighbor heuristic calculation is skipped; worth it? idk
+                if (closed.find(neighbor) != closed.end()) {
+                    continue;
+                }
+from hbjpmda():
+                //closed check to skip heuristic calculation
+                if (closed.find(neighbor) != closed.end()) {
+                    continue;
+                }
+*/
+
+/* old best_dists stuff
+                        //path is strictly better, update heuristics and prev stuff and neighbors and repush to open
+                        (*it).first->f = neighbor->f;
+                        //since curr->f <= (*it).first->f, (*it).first cannot be ancestor of curr, and updating prev won't create loop
+                        (*it).first->prev = curr;
+                        (*it).first->prev_actions = neighbor->prev_actions;
+                        (*it).first->prev_push_count = neighbor->prev_push_count;
+                        //note this breaks weak_ptrs to neighbor
+                        //there are no shared_ptrs to neighbor yet, so this is fine
+                        neighbor = (*it).first;
+
+                        (*it).first->g = neighbor->g;
+                        (*it).first->h = neighbor->h;
+                        (*it).first->f = neighbor->f;
+                        (*it).first->prev = curr;
+                        (*it).first->prev_actions = neighbor->prev_actions;
+                        (*it).first->prev_push_count = neighbor->prev_push_count;
+                        neighbor = (*it).first;
+*/
+
+/*
+void clear_neighbor_prunes(unsigned int dist_improvement);
+
+//idea: unprune neighbor if neighbor is valid and path to neighbor via curr is strictly better
+//unnecessary for dijkstra bc its open is optimal
+//prunes will be restored upon curr->try_action()
+//if open contains multiple pointers to curr, only the one with best dist can make use of the unprune
+void SANode::clear_neighbor_prunes(unsigned int dist_improvement) {
+    for (auto it = neighbors.begin(); it != neighbors.end(); ) {
+        if (dist_improvement >= (*it).second.first) {
+            (*it).second.first = 0;
+        }
+    }
+}
+*/
+
+/*from try_action():
+        if (action.z != ActionId::JUMP) {
+            //update prev/prev_actions
+            ans->prev = shared_from_this();
+            ans->prev_actions = {action};
+        }
+*/
+
+/*cost calculation before transfer_neighbors()
+
+dijkstra:
+hbjpd:
+neighbor->f += neighbor->prev_actions.size();
+mda:
+++(neighbor->g);
+hbjpmda:
+neighbor->g += neighbor->prev_actions.size();
+*/
+
+/*sanode_ref_pool stuff replaced by separating SANode and SASearchNode
+from try_action():
+//IMPORTANT: bc neighbors uses weak_ptr, stored result disappears when the returned shared_ptr<SANode> goes out of scope
+
+from header:
+//every search type can create neighbor loops (see Pictures/dijkstra_neighbor_loop), so shared_ptr doesn't work
+//to ensure weak_ptrs remain valid for the duration of the sa_search, sanode_ref_pool is used
+
+extern vector<shared_ptr<SANode>> sanode_ref_pool; //to store strong refs so SANode weak_ptrs remain valid; remember to clear when done pathfind_sa
+vector<shared_ptr<SANode>> sanode_ref_pool; //to store strong refs so SANode weak_ptrs remain valid; remember to clear when done pathfind_sa
+
+from try_jump():
+                        //preserve stored neighbor from curr_jp->try_action
+                        sanode_ref_pool.push_back(neighbor);
+from pathfind_sa():
+    //clear sanode_ref_pool
+    sanode_ref_pool.clear();
+from pathfind_sa_iada() generating best_dists check:
+    sanode_ref_pool.push_back(neighbor); //preserve neighbor ref in case curr generates again
+from pathfind_sa_hbjpiada() generating best_dists check:
+    sanode_ref_pool.push_back(neighbor); //preserve neighbor ref in case curr generates again
+*/
+
+/*
+    ClassDB::bind_method(D_METHOD("rrd_init_iad", "goal_pos"), &Pathfinder::rrd_init_iad);
+    ClassDB::bind_method(D_METHOD("rrd_init_cad", "goal_pos"), &Pathfinder::rrd_init_cad);
+    ClassDB::bind_method(D_METHOD("rrd_resume_iad", "goal_pos", "node_pos", "agent_type_id"), &Pathfinder::rrd_resume_iad);
+    ClassDB::bind_method(D_METHOD("rrd_resume_cad", "goal_pos", "agent_pos"), &Pathfinder::rrd_resume_cad);
+*/
+
+/* consistent abstract distance ideas (DEPRECATED, see Pictures/greedy_is_not_optimal_when_parsing_sequence)
+
+//given sequence of tile_ids from agent to goal (inclusive) (if pushable, sequence <- empty)
+//if push, make all affected (within tpl+merge range) tiles wildcard (except if pushed is ZERO, only make pushed location transparent)
+//but if tiles are made transparent, future pushes won't be detected
+//bc tile_ids in sequence might not be collinear, sequence should not handle pushing
+//for every reverse action, store the tpl nodes behind curr_node for push checking
+//every nonzero tile is at least two steps away from turning into zero (assume agent merges with opposite sign and steps back) thus h+=2 for every break in rrd path
+//sequence break occurs at tile if from agent, no combination of slide/split makes tile reachable; start next sequence where sequence break occurred, using best possible agent_tile_id
+//non-step-back case is covered by rrd; if self-intersecting, loop section is at least as long as step-back
+//subdijkstra to search for specific tile ids that enable merge doesn’t work since player could’ve pushed one along
+//store results, don't re-process entire sequence each time
+
+//make push-affected cells wildcard - agent can assume any tile_id after entering
+//if push then turn, wildcard all push-affected tiles, append empty to seq
+//use unordered_set or if good, Tilemap’s underlying container to store wildcards (every CADNode needs one)
+//if push-affected tiles intersect with already-visited rra path from agent end, only propagate wildcard if intersection cell is nonempty
+//todo: figure out how to analyze seq for breaks, and make use of prev seq result
+
+*/

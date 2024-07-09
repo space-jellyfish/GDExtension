@@ -13,6 +13,10 @@
 using namespace std;
 using namespace godot;
 
+//IMPORTANT:
+//don't leave any unjustified asserts commented out
+//after all asserts are commented out for release, they will be indistinguishable from justified asserts
+
 //each cell is represented as | BackId (8) | TypeId (3) | TileId (5) |
 //Vector2i max is exclusive
 //sign in pow_sign must be +-1
@@ -67,7 +71,7 @@ enum ColorId {
 	GRAY = 32,
 };
 
-enum SearchId {
+enum SASearchId {
 	DIJKSTRA = 0,
     HBJPD, //horizontally biased jump point dijkstra
 	MDA, //manhattan distance astar
@@ -76,6 +80,15 @@ enum SearchId {
     HBJPIADA,
 	//IDA, IDIDJPA, LR, CBS, QUANT
     SEARCH_END,
+};
+
+enum MASearchId {
+    NF, //network flow; doesn't work, see Pictures/flow_based_does_not_work
+    WHCA, //windowed hierarchical cooperative astar
+    EPEA, //enhanced partial expansion astar
+    ICTS, //increasing cost tree search
+    CBS, //conflict-based search
+        //add constraints on wake in addition to tile itself
 };
 
 enum ActionId {
@@ -162,24 +175,12 @@ struct CADNodeEquator {
     }
 };
 
+//shared bc multiple SASearchNodes could use same SANode
 struct SANode : public enable_shared_from_this<SANode> {
     Vector2i lv_pos;
     vector<vector<uint16_t>> lv;
-    int g=0, h=0, f=0; //use f for dijkstra
     //zobrist; for fast equality check
     uint64_t hash;
-    //for backtracing
-    vector<Vector3i> prev_actions;
-    shared_ptr<SANode> prev = nullptr;
-    int prev_push_count = 0;
-    //to store intermediate results/prevent backtracking
-    //action, {pruned (or invalid), weak_ptr}
-    //nullptr indicates neighbor expired
-    unordered_map<Vector3i, pair<bool, weak_ptr<SANode>>, ActionHasher> neighbors;
-
-
-    Array trace_path(int path_len);
-    void print_lv();
 
     //these should update hash
     void init_lv_pos(Vector2i pos);
@@ -188,43 +189,67 @@ struct SANode : public enable_shared_from_this<SANode> {
     void set_lv_pos(Vector2i pos);
     void clear_lv_sid(Vector2i pos);
 
+    void print_lv();
     uint16_t get_lv_sid(Vector2i pos);
     int get_dist_to_lv_edge(Vector2i dir);
     int get_slide_push_count(Vector2i dir, bool allow_type_change);
     void perform_slide(Vector2i dir, int push_count);
-    
-    shared_ptr<SANode> try_slide(Vector2i dir, bool allow_type_change);
-    shared_ptr<SANode> try_split(Vector2i dir, bool allow_type_change);
-    shared_ptr<SANode> try_action(Vector3i action, Vector2i lv_end, bool allow_type_change);
-
-    shared_ptr<SANode> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change);
-    shared_ptr<SANode> get_jump_point(Vector2i dir, Vector2i jp_pos, int jump_dist);
-    void prune_action_ids(Vector2i dir);
 };
 
-struct SANodeHashGetter  {
-    uint64_t operator() (const shared_ptr<SANode>& n) const {
-        return n->hash;
+
+//shared bc multiple children have prev pointer
+struct SASearchNode : public enable_shared_from_this<SASearchNode> {
+    shared_ptr<SANode> sanode;
+    unsigned int g=0, h=0, f=0; //use f for dijkstra
+    //for backtracing
+    vector<Vector3i> prev_actions;
+    shared_ptr<SASearchNode> prev = nullptr;
+    unsigned int prev_push_count = 0;
+    //to store intermediate results/prevent backtracking (perform_slide(), try_jump())
+    //action, {unprune_threshold, neighbor_sanode, push_count}
+    //if neighbor is invalid, unprune_threshold == numeric_limits<unsigned int>::max()
+    //if neighbor not pruned, unprune_threshold == 0
+    //nullptr is placeholder for prune, it doesn't indicate anything in particular (creating the SANode would be wasteful)
+    //missing entry indicates unknown
+    unordered_map<Vector3i, tuple<unsigned int, shared_ptr<SANode>, unsigned int>, ActionHasher> neighbors;
+
+    void init_sanode(Vector2i min, Vector2i max, Vector2i start);
+    Array trace_path(int path_len);
+    
+    shared_ptr<SASearchNode> try_slide(Vector2i dir, bool allow_type_change);
+    shared_ptr<SASearchNode> try_split(Vector2i dir, bool allow_type_change);
+    shared_ptr<SASearchNode> try_action(Vector3i action, Vector2i lv_end, bool allow_type_change);
+
+    shared_ptr<SASearchNode> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change);
+    shared_ptr<SASearchNode> get_jump_point(Vector2i dir, Vector2i jp_pos, unsigned int jump_dist);
+    void prune_invalid_action_ids(Vector2i dir);
+    void prune_backtrack(Vector2i dir);
+    void transfer_neighbors(shared_ptr<SASearchNode> better_dist, int dist_improvement);
+};
+
+struct SASearchNodeHashGetter  {
+    uint64_t operator() (const shared_ptr<SASearchNode>& n) const {
+        return n->sanode->hash;
     }
 };
 
-struct SANodeEquator {
-	bool operator() (const shared_ptr<SANode>& first, const shared_ptr<SANode>& second) const {
+struct SASearchNodeEquator {
+	bool operator() (const shared_ptr<SASearchNode>& first, const shared_ptr<SASearchNode>& second) const {
 		//return (first->lv_pos == second->lv_pos && first->lv == second->lv);
         //return first->hash == second->hash && first->lv_pos == second->lv_pos && first->lv == second->lv;
-        if  (first->hash == second->hash) {
-            if (first->lv_pos == second->lv_pos && first->lv == second->lv) {
+        if  (first->sanode->hash == second->sanode->hash) {
+            if (first->sanode->lv_pos == second->sanode->lv_pos && first->sanode->lv == second->sanode->lv) {
                 return true;
             }
-            UtilityFunctions::print("HASH COLLISION");
+            //UtilityFunctions::print("HASH COLLISION");
         }
         return false;
 	}
 };
 
 //if f tied, use g; higher g indicates higher confidence
-struct SANodeComparer {
-	bool operator() (const shared_ptr<SANode>& first, const shared_ptr<SANode>& second) {
+struct SASearchNodeComparer {
+	bool operator() (const shared_ptr<SASearchNode>& first, const shared_ptr<SASearchNode>& second) {
 		if (first->f > second->f) {
 			return true;
 		}
@@ -259,6 +284,8 @@ public:
     Array pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
 
+    //Array pathfind_ma(int search_id, int max_sa_depth, )
+
     void set_player_pos(Vector2i pos);
     void set_player_last_dir(Vector2i dir);
     void set_tilemap(TileMap* t);
@@ -268,35 +295,9 @@ public:
     bool is_tile(Vector2i pos);
     bool is_immediately_trapped(Vector2i pos);
 
-    //heuristics (only cells in lv allowed for rrd)
-    //sharable across multiple pathfind()s with different min, max (all positions are global)
-    //if rrd finds that goal_pos is enclosed, return numeric_limits<int>::max() so pathfinder can exit early
-    //inconsistent abstract distance
-    //propagate h-cost using separation between tile_ids
-    void rrd_init_iad(Vector2i goal_pos);
-    int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id);
+    //move back to global scope once testing is done
     void rrd_clear_iad();
-    int get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id);
-    int get_tile_id_sep(uint8_t tile_id1, uint8_t tile_id2);
-    //consistent abstract distance
-    //DEPRECATED, see Pictures/greedy_is_not_optimal_when_parsing_sequence
-    //given sequence of tile_ids from agent to goal (inclusive) (if pushable, sequence <- empty)
-    //if push, make all affected (within tpl+merge range) tiles transparent (except if pushed is ZERO, only make pushed location transparent)
-    //but if tiles are made transparent, future pushes won't be detected
-    //bc tile_ids in sequence might not be collinear, sequence should not handle pushing
-    //for every reverse action, store the tpl nodes behind curr_node for push checking
-    //every nonzero tile is at least two steps away from turning into zero (assume agent merges with opposite sign and steps back) thus h+=2 for every break in rrd path
-    //sequence break occurs at tile if from agent, no combination of slide/split makes tile reachable; start next sequence where sequence break occurred, using best possible agent_tile_id
-    //non-step-back case is covered by rrd; if self-intersecting, loop section is at least as long as step-back
-    //subdijkstra to search for specific tile ids that enable merge doesn’t work since player could’ve pushed one along
-    //store results, don't re-process entire sequence each time
-    void rrd_init_cad(Vector2i goal_pos);
-    int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos);
-    int trace_cad(shared_ptr<CADNode> n);
-    bool is_perp(Vector2i first, Vector2i second);
-    int get_cad_push_count();
     void rrd_clear_cad();
-    int manhattan_dist(Vector2i pos1, Vector2i pos2);
 };
 
 const unordered_set<uint8_t> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
@@ -306,6 +307,7 @@ const unordered_set<Vector2i, DirHasher> DIRECTIONS = {Vector2i(1, 0), Vector2i(
 const unordered_set<Vector2i, DirHasher> H_DIRS = {Vector2i(1, 0), Vector2i(-1, 0)};
 const unordered_set<Vector2i, DirHasher> V_DIRS = {Vector2i(0, 1), Vector2i(0, -1)};
 const unordered_map<uint8_t, int> MERGE_PRIORITIES = {{TypeId::PLAYER, 1}, {TypeId::INVINCIBLE, 3}, {TypeId::HOSTILE, 2}, {TypeId::VOID, 4}, {TypeId::REGULAR, 0}};
+const int HASH_KEY_GENERATOR_SEED = 2050;
 const int TILE_POW_MAX = 14;
 const int ABSTRACT_DIST_SIGN_CHANGE_PENALTY = 2;
 const int MAX_SEARCH_WIDTH = 17;
@@ -334,9 +336,11 @@ extern array<array<array<uint64_t, TypeId::REGULAR>, MAX_SEARCH_WIDTH>, MAX_SEAR
 extern array<array<uint64_t, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> agent_pos_hash_keys;
 extern TileMap* cells;
 extern unordered_map<uint8_t, int> tile_push_limits; //type_id, tpl
-extern unordered_map<Vector2i, tuple<pq_iad, um, um>, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, {open, closed, best_gs}; assume all entries are actively used
-extern unordered_map<Vector2i, tuple<pq_cad, us_cad, um>, Vector2iHasher> consistent_abstract_dists; //goal_pos, {open, closed, best_gs}; closed is necessary to store guaranteed optimal results
-extern array<double, SearchId::SEARCH_END> sa_cumulative_search_times; //search_id, cumulative time (ms)
+//assume all entries are actively used
+//closed is necessary to store guaranteed optimal results
+extern unordered_map<Vector2i, tuple<pq_iad, um, um>, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, {open, closed, best_gs}
+extern unordered_map<Vector2i, tuple<pq_cad, us_cad, um>, Vector2iHasher> consistent_abstract_dists; //goal_pos, {open, closed, best_gs}
+extern array<double, SASearchId::SEARCH_END> sa_cumulative_search_times; //search_id, cumulative time (ms)
 
 template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
@@ -382,5 +386,24 @@ uint16_t get_merged_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
 uint16_t get_jumped_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
 uint8_t get_merged_tile_id(uint8_t tile_id1, uint8_t tile_id2);
 Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2);
+
+//heuristics (only cells in lv allowed for rrd)
+//sharable across multiple pathfind()s with different min, max (all positions are global)
+//if rrd finds that goal_pos is enclosed, return numeric_limits<int>::max() so pathfinder can exit early
+//inconsistent abstract distance
+//propagate h-cost using separation between tile_ids
+void rrd_init_iad(Vector2i goal_pos);
+int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id);
+int get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id);
+int get_tile_id_sep(uint8_t tile_id1, uint8_t tile_id2);
+//consistent abstract distance
+//DEPRECATED, see Pictures/greedy_is_not_optimal_when_parsing_sequence
+//see extra.h for the idea
+void rrd_init_cad(Vector2i goal_pos);
+int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos);
+int trace_cad(shared_ptr<CADNode> n);
+bool is_perp(Vector2i first, Vector2i second);
+int get_cad_push_count();
+int manhattan_dist(Vector2i pos1, Vector2i pos2);
 
 #endif
