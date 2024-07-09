@@ -16,6 +16,7 @@ print(env['CXXFLAGS'])
 #env.Append(CXXFLAGS=['-stdlib=libc++', '-std=c++20']);
 env.Append(CXXFLAGS=['-stdlib=libc++']);
 env.Append(LINKFLAGS=['-stdlib=libc++']);
+#env.Append(CXXFLAGS=["-O3"])
 
 # tweak this if you want to use different folders, or more folders, to store your source code in.
 env.Append(CPPPATH="Pathfinding_Tilemap/")
