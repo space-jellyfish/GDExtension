@@ -389,7 +389,7 @@ shared_ptr<SASearchNode> SASearchNode::try_jump(Vector2i dir, Vector2i lv_end, b
     int dist_to_lv_edge = sanode->get_dist_to_lv_edge(dir);
     int curr_dist = 1;
     next_dirs.emplace_back(dir, curr_dist < dist_to_lv_edge, false);
-    shared_ptr<SASearchNode> curr_jp = make_shared<SASearchNode>();
+    shared_ptr<SASearchNode> curr_jp;
 
     while (curr_dist <= dist_to_lv_edge) {
         uint16_t curr_stuff_id = sanode->get_lv_sid(curr_pos);
@@ -400,7 +400,8 @@ shared_ptr<SASearchNode> SASearchNode::try_jump(Vector2i dir, Vector2i lv_end, b
         }
 
         //get current jump point; reuse sanode if possible
-        curr_jp = get_jump_point(curr_jp->sanode, dir, curr_pos, curr_dist);
+        shared_ptr<SANode> prev_sanode = (curr_dist > 1) ? curr_jp->sanode : nullptr;
+        curr_jp = get_jump_point(prev_sanode, dir, curr_pos, curr_dist);
 
         //check lv_end
         if (curr_pos == lv_end) {
