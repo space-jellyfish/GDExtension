@@ -1509,8 +1509,8 @@ int get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id) {
 
 //assume neither is zero or empty
 int get_tile_id_sep(uint8_t tile_id1, uint8_t tile_id2) {
-    int ans = abs(tile_id1 - tile_id2) * 2;
-    int sgn_change_penalty = int(get_true_tile_sign(tile_id1) * get_true_tile_sign(tile_id2) == -1) * ABSTRACT_DIST_SIGN_CHANGE_PENALTY;
+    int ans = abs(tile_id1 - tile_id2) * IAD_SEP_FACTOR;
+    int sgn_change_penalty = int(get_true_tile_sign(tile_id1) * get_true_tile_sign(tile_id2) == -1) * IAD_SIGN_CHANGE_PENALTY;
     return ans + sgn_change_penalty;
 }
 
