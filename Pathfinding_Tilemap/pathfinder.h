@@ -16,6 +16,7 @@ using namespace godot;
 //IMPORTANT:
 //don't leave any unjustified asserts commented out
 //after all asserts are commented out for release, they will be indistinguishable from justified asserts
+//don't use pair/tuple, use structs instead for strong typing (with member initializer lists)
 
 //each cell is represented as | BackId (8) | TypeId (3) | TileId (5) |
 //Vector2i max is exclusive
@@ -78,11 +79,16 @@ enum SASearchId {
     IADA, //inconsistent abstract distance astar
     HBJPMDA,
     HBJPIADA,
-	//IDA, IDIDJPA, LR, CBS, QUANT
+    IWDMDA, //iterative widening diamond *
+    IWDHBJPMDA,
+    IWSMDA, //iterative widening square *
+    IWSHBJPMDA,
+	//IDA, QUANT, FMT/RRT
     SEARCH_END,
 };
 
 enum MASearchId {
+    LRA, //local repair astar
     NF, //network flow; doesn't work, see Pictures/flow_based_does_not_work
     WHCA, //windowed hierarchical cooperative astar
     EPEA, //enhanced partial expansion astar
@@ -98,6 +104,34 @@ enum ActionId {
 	ACTION_END,
 };
 
+const unordered_set<uint8_t> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
+const unordered_set<uint8_t> B_SAVE_OR_GOAL = {BackId::SAVEPOINT, BackId::GOAL};
+const unordered_set<uint8_t> T_ENEMY = {TypeId::INVINCIBLE, TypeId::HOSTILE, TypeId::VOID};
+const unordered_set<Vector2i, DirHasher> DIRECTIONS = {Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)};
+const unordered_set<Vector2i, DirHasher> H_DIRS = {Vector2i(1, 0), Vector2i(-1, 0)};
+const unordered_set<Vector2i, DirHasher> V_DIRS = {Vector2i(0, 1), Vector2i(0, -1)};
+const unordered_map<uint8_t, int> MERGE_PRIORITIES = {{TypeId::PLAYER, 1}, {TypeId::INVINCIBLE, 3}, {TypeId::HOSTILE, 2}, {TypeId::VOID, 4}, {TypeId::REGULAR, 0}};
+const int HASH_KEY_GENERATOR_SEED = 2050;
+const int TILE_POW_MAX = 14;
+const int IAD_SEP_FACTOR = 1;
+const int IAD_SIGN_CHANGE_PENALTY = 2;
+const int MAX_SEARCH_WIDTH = 17;
+const int MAX_SEARCH_HEIGHT = 17;
+const int TILE_ID_BITLEN = 5;
+const int TYPE_ID_BITLEN = 3;
+const int BACK_ID_BITLEN = 8;
+const int TILE_AND_TYPE_ID_BITLEN = TILE_ID_BITLEN + TYPE_ID_BITLEN;
+const int TILE_ID_COUNT = 1 << TILE_ID_BITLEN;
+const uint16_t TILE_ID_MASK = TILE_ID_COUNT - 1;
+const uint16_t TYPE_ID_MASK = ((1 << TYPE_ID_BITLEN) - 1) << TILE_ID_BITLEN;
+const uint16_t BACK_ID_MASK = ((1 << BACK_ID_BITLEN) - 1) << (TILE_ID_BITLEN + TYPE_ID_BITLEN);
+const uint16_t BACK_AND_TYPE_ID_MASK = BACK_ID_MASK + TYPE_ID_MASK;
+const uint16_t BACK_AND_TILE_ID_MASK = BACK_ID_MASK + TILE_ID_MASK;
+const uint16_t TYPE_AND_TILE_ID_MASK = TYPE_ID_MASK + TILE_ID_MASK;
+const uint16_t REGULAR_TYPE_BITS = TypeId::REGULAR << TILE_ID_BITLEN;
+const bool TRACK_ZEROS = false;
+const bool TRACK_KILLABLE_TYPES = false;
+
 //collision-free
 //mind the undefined behavior
 struct Vector2iHasher {
@@ -107,7 +141,8 @@ struct Vector2iHasher {
         //return hash_x ^ (hash_y + 0x9e3779b9 + (hash_x << 6) + (hash_x >> 2));
         //return (v.x << 32) + v.y; //undefined
         uint64_t ans = v.y;
-        memcpy(&ans, &v.x, 4);
+        assert(sizeof(v.x) == 4);
+        memcpy(&ans, &v.x, sizeof(v.x));
         return ans;
     }
 };
@@ -126,14 +161,46 @@ struct ActionHasher {
     }
 };
 
+struct NextDir {
+    Vector2i dir;
+    bool in_bounds;
+    bool blocked; //unused if next_dir == jump_dir
+
+    NextDir(Vector2i _dir, bool _in_bounds, bool _blocked) : dir(_dir), in_bounds(_in_bounds), blocked(_blocked) {}
+};
+
+struct PathNode {
+    Vector2i lv_pos;
+    unsigned int index;
+
+    PathNode(Vector2i _lv_pos, unsigned int _index) : lv_pos(_lv_pos), index(_index) {}
+};
+
+struct PathNodeHasher {
+    uint64_t operator() (const PathNode& n) const {
+        uint64_t lv_pos_hash = Vector2iHasher{}(n.lv_pos);
+        uint64_t index_hash = hash<unsigned int>{}(n.index);
+        return lv_pos_hash ^ (index_hash + 0x9e3779b9 + (lv_pos_hash << 6) + (lv_pos_hash >> 2));
+    }
+};
+
+struct PathNodeEquator {
+    bool operator() (const PathNode& first, const PathNode& second) const {
+        return first.lv_pos == second.lv_pos && first.index == second.index;
+    }
+};
+
+//for informing h_reductions in iterative widening searches
+struct PathInfo {
+    unordered_map<Vector2i, set<unsigned int>> path_indices; //lv_pos, indices in path
+    unordered_map<PathNode, array<bool, TILE_ID_COUNT>, PathNodeHasher, PathNodeEquator> admissible_tile_ids;
+};
+
 struct IADNode {
     Vector2i pos;
     int g;
 
-    IADNode(Vector2i _pos, int _g) {
-        pos = _pos;
-        g = _g;
-    }
+    IADNode(Vector2i _pos, int _g) : pos(_pos), g(_g) {}
 };
 
 struct IADNodeComparer {
@@ -149,12 +216,7 @@ struct CADNode {
     Vector2i prev_dir;
     //vector<uint8_t> behinds; //get from lv
 
-    CADNode(Vector2i _pos, int _g, shared_ptr<CADNode> _prev, Vector2i _prev_dir) {
-        pos = _pos;
-        g = _g;
-        prev = _prev;
-        prev_dir = _prev_dir;
-    }
+    CADNode(Vector2i _pos, int _g, shared_ptr<CADNode> _prev, Vector2i _prev_dir) : pos(_pos), g(_g), prev(_prev), prev_dir(_prev_dir) {}
 };
 
 struct CADNodeComparer {
@@ -185,6 +247,7 @@ struct SANode : public enable_shared_from_this<SANode> {
     //these should update hash
     void init_lv_pos(Vector2i pos);
     void init_lv(Vector2i min, Vector2i max, Vector2i agent_pos);
+    void init_lv_back_ids(Vector2i min, Vector2i max);
     void set_lv_sid(Vector2i pos, uint16_t new_sid);
     void set_lv_pos(Vector2i pos);
     void clear_lv_sid(Vector2i pos);
@@ -196,6 +259,13 @@ struct SANode : public enable_shared_from_this<SANode> {
     void perform_slide(Vector2i dir, int push_count);
 };
 
+struct SANeighbor {
+    unsigned int unprune_threshold;
+    shared_ptr<SANode> sanode;
+    unsigned int push_count;
+
+    SANeighbor(unsigned int _unprune_threshold, shared_ptr<SANode> _sanode, unsigned int _push_count) : unprune_threshold(_unprune_threshold), sanode(_sanode), push_count(_push_count) {}
+};
 
 //shared bc multiple children have prev pointer
 struct SASearchNode : public enable_shared_from_this<SASearchNode> {
@@ -211,10 +281,12 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     //if neighbor not pruned, unprune_threshold == 0
     //nullptr is placeholder for prune, it doesn't indicate anything in particular (creating the SANode would be wasteful)
     //missing entry indicates unknown
-    unordered_map<Vector3i, tuple<unsigned int, shared_ptr<SANode>, unsigned int>, ActionHasher> neighbors;
+    unordered_map<Vector3i, SANeighbor, ActionHasher> neighbors;
 
     void init_sanode(Vector2i min, Vector2i max, Vector2i start);
-    Array trace_path(int path_len);
+    Array trace_path_actions(int path_len);
+    void trace_path_info(int path_len, PathInfo& pi);
+    bool is_on_prev_path(PathInfo& pi, int largest_affected_path_index);
     
     shared_ptr<SASearchNode> try_slide(Vector2i dir, bool allow_type_change);
     shared_ptr<SASearchNode> try_split(Vector2i dir, bool allow_type_change);
@@ -262,7 +334,7 @@ struct SASearchNodeComparer {
 
 
 class Pathfinder : public Node {
-    friend struct SANode;
+    //friend struct SANode;
     GDCLASS(Pathfinder, Node);
 
 private:
@@ -284,8 +356,10 @@ public:
     Array pathfind_sa_iada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
 
-    //Array pathfind_ma(int search_id, int max_sa_depth, )
+    //should starts/ends be same size?
+    Array pathfind_ma(int search_id, int max_sa_depth, bool allow_type_change, Vector2i min, Vector2i max, vector<Vector2i> starts, vector<Vector2i> ends);
 
     void set_player_pos(Vector2i pos);
     void set_player_last_dir(Vector2i dir);
@@ -293,45 +367,32 @@ public:
     void set_tile_push_limits(Dictionary tpls);
     void generate_hash_keys();
 
-    bool is_tile(Vector2i pos);
     bool is_immediately_trapped(Vector2i pos);
+    //iterative widening helper functions
+    Array path_informed_mda(shared_ptr<SANode> sanode, Array path, int h_reduction);
+    Array path_informed_hbjpmda(shared_ptr<SANode> sanode, Array path, int h_reduction);
 
     //move back to global scope once testing is done
     void rrd_clear_iad();
     void rrd_clear_cad();
 };
 
-const unordered_set<uint8_t> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
-const unordered_set<uint8_t> B_SAVE_OR_GOAL = {BackId::SAVEPOINT, BackId::GOAL};
-const unordered_set<uint8_t> T_ENEMY = {TypeId::INVINCIBLE, TypeId::HOSTILE, TypeId::VOID};
-const unordered_set<Vector2i, DirHasher> DIRECTIONS = {Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)};
-const unordered_set<Vector2i, DirHasher> H_DIRS = {Vector2i(1, 0), Vector2i(-1, 0)};
-const unordered_set<Vector2i, DirHasher> V_DIRS = {Vector2i(0, 1), Vector2i(0, -1)};
-const unordered_map<uint8_t, int> MERGE_PRIORITIES = {{TypeId::PLAYER, 1}, {TypeId::INVINCIBLE, 3}, {TypeId::HOSTILE, 2}, {TypeId::VOID, 4}, {TypeId::REGULAR, 0}};
-const int HASH_KEY_GENERATOR_SEED = 2050;
-const int TILE_POW_MAX = 14;
-const int IAD_SEP_FACTOR = 1;
-const int IAD_SIGN_CHANGE_PENALTY = 2;
-const int MAX_SEARCH_WIDTH = 17;
-const int MAX_SEARCH_HEIGHT = 17;
-const int TILE_ID_BITLEN = 5;
-const int TYPE_ID_BITLEN = 3;
-const int BACK_ID_BITLEN = 8;
-const int TILE_ID_COUNT = 1 << TILE_ID_BITLEN;
-const uint16_t TILE_ID_MASK = TILE_ID_COUNT - 1;
-const uint16_t TYPE_ID_MASK = ((1 << TYPE_ID_BITLEN) - 1) << TILE_ID_BITLEN;
-const uint16_t BACK_ID_MASK = ((1 << BACK_ID_BITLEN) - 1) << (TILE_ID_BITLEN + TYPE_ID_BITLEN);
-const uint16_t BACK_AND_TYPE_ID_MASK = BACK_ID_MASK + TYPE_ID_MASK;
-const uint16_t BACK_AND_TILE_ID_MASK = BACK_ID_MASK + TILE_ID_MASK;
-const uint16_t TYPE_AND_TILE_ID_MASK = TYPE_ID_MASK + TILE_ID_MASK;
-const uint16_t REGULAR_TYPE_BITS = TypeId::REGULAR << TILE_ID_BITLEN;
-const bool TRACK_ZEROS = false;
-const bool TRACK_KILLABLE_TYPES = false;
-
 typedef priority_queue<IADNode, vector<IADNode>, IADNodeComparer> pq_iad;
 typedef priority_queue<shared_ptr<CADNode>, vector<shared_ptr<CADNode>>, CADNodeComparer> pq_cad;
 typedef unordered_set<shared_ptr<CADNode>, CADNodeHasher, CADNodeEquator> us_cad;
 typedef unordered_map<Vector2i, int, Vector2iHasher> um; //node_pos, best_g
+
+struct RRDIADLists {
+    pq_iad open;
+    um closed;
+    um best_gs;
+};
+
+struct RRDCADLists {
+    pq_cad open;
+    us_cad closed;
+    um best_gs;
+};
 
 extern array<array<array<uint64_t, TILE_ID_COUNT - 1>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys;
 extern array<array<array<uint64_t, TypeId::REGULAR>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> type_id_hash_keys;
@@ -340,8 +401,8 @@ extern TileMap* cells;
 extern unordered_map<uint8_t, int> tile_push_limits; //type_id, tpl
 //assume all entries are actively used
 //closed is necessary to store guaranteed optimal results
-extern unordered_map<Vector2i, tuple<pq_iad, um, um>, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, {open, closed, best_gs}
-extern unordered_map<Vector2i, tuple<pq_cad, us_cad, um>, Vector2iHasher> consistent_abstract_dists; //goal_pos, {open, closed, best_gs}
+extern unordered_map<Vector2i, RRDIADLists, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, rrd lists
+extern unordered_map<Vector2i, RRDCADLists, Vector2iHasher> consistent_abstract_dists; //goal_pos, rrd lists
 extern array<double, SASearchId::SEARCH_END> sa_cumulative_search_times; //search_id, cumulative time (ms)
 
 template <typename T> int sgn(T val) {
