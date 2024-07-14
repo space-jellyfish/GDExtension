@@ -1,5 +1,5 @@
-#ifndef PATHFINDER_H
-#define PATHFINDER_H
+#ifndef PATHFINDER_HPP
+#define PATHFINDER_HPP
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/node.hpp>
@@ -17,6 +17,7 @@ using namespace godot;
 //don't leave any unjustified asserts commented out
 //after all asserts are commented out for release, they will be indistinguishable from justified asserts
 //don't use pair/tuple, use structs instead for strong typing (with member initializer lists)
+//ensure no overflow happens when left shifting (<<); see https://en.cppreference.com/w/cpp/language/implicit_conversion#Integral_promotion
 
 //each cell is represented as | BackId (8) | TypeId (3) | TileId (5) |
 //Vector2i max is exclusive
@@ -300,8 +301,10 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     void transfer_neighbors(shared_ptr<SASearchNode> better_dist, int dist_improvement);
 
     Array trace_path_actions(int path_len);
-    void trace_path_info(int path_len, PathInfo& pi, int max_radius, int iw_shape_id);
+    template<typename RadiusGetter>
+    void trace_path_info(int path_len, PathInfo& pi, int radius, const RadiusGetter& get_radius);
     bool is_on_prev_path(PathInfo& pi, int largest_affected_path_index);
+    std::function<unsigned int(Vector2i)> get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos);
 };
 
 struct SASearchNodeHashGetter  {
@@ -410,7 +413,8 @@ extern unordered_map<Vector2i, RRDIADLists, Vector2iHasher> inconsistent_abstrac
 extern unordered_map<Vector2i, RRDCADLists, Vector2iHasher> consistent_abstract_dists; //goal_pos, rrd lists
 extern array<double, SASearchId::SEARCH_END> sa_cumulative_search_times; //search_id, cumulative time (ms)
 
-template <typename T> inline int sgn(T val) {
+//inline is unnecessary, see StackOverflow/1759300
+template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
 }
 
@@ -473,5 +477,9 @@ int trace_cad(shared_ptr<CADNode> n);
 bool is_perp(Vector2i first, Vector2i second);
 int get_cad_push_count();
 int manhattan_dist(Vector2i pos1, Vector2i pos2);
+
+
+//templated implementations
+#include "sa_search_node.tpp"
 
 #endif

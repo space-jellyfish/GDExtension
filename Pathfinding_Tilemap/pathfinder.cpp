@@ -583,33 +583,6 @@ Array SASearchNode::trace_path_actions(int path_len) {
 	return ans;
 }
 
-//idea: do h_reduction if admissible tileid at same pos and upcoming locations in path have not been disturbed (visited or push-affected)
-    //only trace nodes inside diamond/square
-        //use lazy/just-in-time checking
-    //trace nodes along jump (if there is jump)
-    //h_reduction based on pos alone is too inaccurate
-    //calculate all admissible tile_ids at each pos, no need for ordered path or next pointers
-    //comparing entire diamond/square is unnecessary
-        //but what if a supportive tile for prev path is visited or push-affected?
-            //track admissible supportive tile_ids too?
-                //but what if there is a way to affect 2+ supportive tiles without invalidating prev path?
-            //NAH, ignore supportive tiles
-//account for restrictions due to pushing
-//account for Pictures/both_push_and_merge_are_admissible and generalization to higher tpl
-    //NAH, too hard; see Pictures/similar_to_both_push_and_merge_are_admissible_but_push_not_admissible
-//account for n is 2nd-to-last node, path contains merge into goal, but push is possible
-    //NAH, heuristic improvement is negligible
-//create unordered_map<lv_pos, set of indices at which lv_pos occurs in prev path> prev_path_indices
-    //path_informed_mda() stores largest_affected_path_index
-    //use std::set::upper_bound() to update it
-//return unnamed PathInfo object so RVO happens? NAH, that still requires copying the members
-void SASearchNode::trace_path_info(int path_len, PathInfo& pi, int max_radius, int iw_shape_id) {
-    shared_ptr<SASearchNode> curr = shared_from_this();
-    while (curr->prev != nullptr) {
-
-    }
-}
-
 //get lv_pos and tile_id from SASearchNode
 //combine prev_path_indices and admissible_tile_ids into single structure? NAH too complicated
 bool SASearchNode::is_on_prev_path(PathInfo& pi, int largest_affected_path_index) {
@@ -627,6 +600,15 @@ bool SASearchNode::is_on_prev_path(PathInfo& pi, int largest_affected_path_index
         }
     }
     return false;
+}
+
+std::function<unsigned int(Vector2i)> SASearchNode::get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos) {
+    switch (iw_shape_id) {
+        case IWShapeId::DIAMOND:
+            return [dest_lv_pos](Vector2i curr_lv_pos) -> unsigned int { return manhattan_dist(curr_lv_pos, dest_lv_pos); };
+        default:
+            return [dest_lv_pos](Vector2i curr_lv_pos) -> unsigned int { return max(abs(curr_lv_pos.x - dest_lv_pos.x), abs(curr_lv_pos.y - dest_lv_pos.y)); };
+    }
 }
 
 
@@ -1159,7 +1141,7 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
 
 //idea: iteratively widening diamond; ignore tiles outside of diamond when searching to obtain a path that informs search in the next iteration
 //iwd SANodes should preserve all back_ids, even ones outside the diamond
-//if prev iteration has multiple optimal paths, use all of them?
+//if prev iteration has multiple optimal paths, use all of them? NAH, prioritize speed
 //only use path from the previous iteration bc older iterations' paths are less relevant
     //using all paths would case uneven reduction biased towards nodes near the goal
 //only apply h_reduction to nodes inside diamond
@@ -1287,7 +1269,8 @@ uint8_t get_back_id(uint16_t stuff_id) {
 }
 
 uint16_t get_stuff_id(Vector2i pos) {
-    return (get_back_id(pos) << 8) + (get_type_id(pos) << 5) + get_tile_id(pos);
+    Vector2i tile_atlas_coords = cells->get_cell_atlas_coords(LayerId::TILE, pos);
+    return (get_back_id(pos) << TILE_AND_TYPE_ID_BITLEN) + (max(tile_atlas_coords.y, 0) << TILE_ID_BITLEN) + (tile_atlas_coords.x + 1);
 }
 
 uint8_t get_tile_id(Vector2i pos) {
@@ -1418,7 +1401,8 @@ int get_signed_tile_pow(uint8_t tile_id) {
     return abs(tile_id - TileId::ZERO) - 1;
 }
 
-//for EMPTY and ZERO, either +-1 is fine
+//returns one of {+1, -1}; for EMPTY and ZERO, either is fine
+//slightly faster than get_true_tile_sign()
 int get_tile_sign(uint8_t tile_id) {
     if (tile_id == TileId::ZERO) {
         return 1;
@@ -1458,15 +1442,14 @@ uint16_t get_merged_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id) {
     uint8_t src_type_id = get_type_id(src_stuff_id);
     uint8_t dest_type_id = get_type_id(dest_stuff_id);
     uint8_t type_id = is_type_preserved(src_type_id, dest_type_id) ? src_type_id : dest_type_id;
-    uint16_t tile_bits = get_merged_tile_id(get_tile_id(src_stuff_id), get_tile_id(dest_stuff_id));
+    uint8_t tile_id = get_merged_tile_id(get_tile_id(src_stuff_id), get_tile_id(dest_stuff_id));
 
     //hostile death
-    if (tile_bits == TileId::ZERO && type_id == TypeId::HOSTILE) {
+    if (type_id == TypeId::HOSTILE && is_tile_unsigned(tile_id)) {
         type_id = TypeId::REGULAR;
     }
-    uint16_t type_bits = type_id << TILE_ID_BITLEN;
 
-    return back_bits + type_bits + tile_bits;
+    return back_bits + (type_id << TILE_ID_BITLEN) + tile_id;
 }
 
 //get_merged_stuff_id but assuming dest is empty_and_regular
