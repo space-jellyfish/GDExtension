@@ -40,7 +40,7 @@ enum TileId {
 };
 
 enum TypeId {
-    PLAYER = 0,
+    PLAYER,
     INVINCIBLE,
     HOSTILE,
     VOID,
@@ -48,7 +48,7 @@ enum TypeId {
 };
 
 enum BackId {
-	NONE = 0,
+	NONE,
 	BORDER_ROUND,
 	BORDER_SQUARE,
 	MEMBRANE,
@@ -60,7 +60,7 @@ enum BackId {
 };
 
 enum LayerId {
-    BACK = 0,
+    BACK,
     TILE
 };
 
@@ -73,7 +73,7 @@ enum ColorId {
 };
 
 enum SASearchId {
-	DIJKSTRA = 0,
+	DIJKSTRA,
     HBJPD, //horizontally biased jump point dijkstra
 	MDA, //manhattan distance astar
     IADA, //inconsistent abstract distance astar
@@ -83,7 +83,7 @@ enum SASearchId {
     IWDHBJPMDA,
     IWSMDA, //iterative widening square *
     IWSHBJPMDA,
-	//IDA, QUANT, FMT/RRT
+	//IDA/EPEA, QUANT, FMT/RRT
     SEARCH_END,
 };
 
@@ -98,10 +98,15 @@ enum MASearchId {
 };
 
 enum ActionId {
-	SLIDE = 0,
+	SLIDE,
 	SPLIT,
     JUMP,
 	ACTION_END,
+};
+
+enum IWShapeId {
+    DIAMOND,
+    SQUARE,
 };
 
 const unordered_set<uint8_t> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
@@ -251,12 +256,12 @@ struct SANode : public enable_shared_from_this<SANode> {
     void set_lv_sid(Vector2i pos, uint16_t new_sid);
     void set_lv_pos(Vector2i pos);
     void clear_lv_sid(Vector2i pos);
-
-    void print_lv();
-    uint16_t get_lv_sid(Vector2i pos);
-    int get_dist_to_lv_edge(Vector2i dir);
-    int get_slide_push_count(Vector2i dir, bool allow_type_change);
     void perform_slide(Vector2i dir, int push_count);
+
+    void print_lv() const;
+    uint16_t get_lv_sid(Vector2i pos) const;
+    int get_dist_to_lv_edge(Vector2i dir) const;
+    int get_slide_push_count(Vector2i dir, bool allow_type_change) const;
 };
 
 struct SANeighbor {
@@ -284,10 +289,6 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     unordered_map<Vector3i, SANeighbor, ActionHasher> neighbors;
 
     void init_sanode(Vector2i min, Vector2i max, Vector2i start);
-    Array trace_path_actions(int path_len);
-    void trace_path_info(int path_len, PathInfo& pi);
-    bool is_on_prev_path(PathInfo& pi, int largest_affected_path_index);
-    
     shared_ptr<SASearchNode> try_slide(Vector2i dir, bool allow_type_change);
     shared_ptr<SASearchNode> try_split(Vector2i dir, bool allow_type_change);
     shared_ptr<SASearchNode> try_action(Vector3i action, Vector2i lv_end, bool allow_type_change);
@@ -297,6 +298,10 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     void prune_invalid_action_ids(Vector2i dir);
     void prune_backtrack(Vector2i dir);
     void transfer_neighbors(shared_ptr<SASearchNode> better_dist, int dist_improvement);
+
+    Array trace_path_actions(int path_len);
+    void trace_path_info(int path_len, PathInfo& pi, int max_radius, int iw_shape_id);
+    bool is_on_prev_path(PathInfo& pi, int largest_affected_path_index);
 };
 
 struct SASearchNodeHashGetter  {
@@ -405,7 +410,7 @@ extern unordered_map<Vector2i, RRDIADLists, Vector2iHasher> inconsistent_abstrac
 extern unordered_map<Vector2i, RRDCADLists, Vector2iHasher> consistent_abstract_dists; //goal_pos, rrd lists
 extern array<double, SASearchId::SEARCH_END> sa_cumulative_search_times; //search_id, cumulative time (ms)
 
-template <typename T> int sgn(T val) {
+template <typename T> inline int sgn(T val) {
     return (T(0) < val) - (val < T(0));
 }
 

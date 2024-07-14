@@ -142,7 +142,31 @@ void SANode::clear_lv_sid(Vector2i pos) {
     lv[pos.y][pos.x] = get_back_bits(stuff_id);
 }
 
-void SANode::print_lv() {
+//assume slide possible
+//updates lv_pos, lv, hash
+void SANode::perform_slide(Vector2i dir, int push_count) {
+    Vector2i merge_lv_pos = lv_pos + (push_count + 1) * dir;
+
+    for (int dist_to_merge=0; dist_to_merge <= push_count; ++dist_to_merge) {
+        Vector2i curr_lv_pos = merge_lv_pos - dist_to_merge * dir;
+        uint16_t prev_sid = get_lv_sid(curr_lv_pos - dir);
+        uint16_t result_sid = prev_sid;
+
+        if (dist_to_merge == 0) {
+            uint16_t curr_sid = get_lv_sid(curr_lv_pos);
+            result_sid = get_merged_stuff_id(prev_sid, curr_sid);
+        }
+        set_lv_sid(curr_lv_pos, result_sid);
+    }
+
+    //remove src tile
+    clear_lv_sid(lv_pos);
+
+    //update lv_pos
+    set_lv_pos(lv_pos + dir);
+}
+
+void SANode::print_lv() const {
     for (int y=0; y < lv.size(); ++y) {
         for (int x=0; x < lv[0].size(); ++x) {
             if (x != lv[0].size() - 1) {
@@ -156,13 +180,13 @@ void SANode::print_lv() {
     }
 }
 
-uint16_t SANode::get_lv_sid(Vector2i pos) {
+uint16_t SANode::get_lv_sid(Vector2i pos) const {
     return lv[pos.y][pos.x];
 }
 
 //lv_edge is furthest valid cell in dir
 //return value is negative if lv_pos is out of bounds in dir
-int SANode::get_dist_to_lv_edge(Vector2i dir) {
+int SANode::get_dist_to_lv_edge(Vector2i dir) const {
     if (dir == Vector2i(1, 0)) {
         return lv[0].size() - 1 - lv_pos.x;
     }
@@ -176,7 +200,7 @@ int SANode::get_dist_to_lv_edge(Vector2i dir) {
 }
 
 //ignore tiles outside of lv
-int SANode::get_slide_push_count(Vector2i dir, bool allow_type_change) {
+int SANode::get_slide_push_count(Vector2i dir, bool allow_type_change) const {
     Vector2i curr_lv_pos = lv_pos;
     uint16_t curr_stuff_id = get_lv_sid(curr_lv_pos);
     uint8_t curr_tile_id = get_tile_id(curr_stuff_id);
@@ -227,92 +251,11 @@ int SANode::get_slide_push_count(Vector2i dir, bool allow_type_change) {
     return -1;
 }
 
-//assume slide possible
-//updates lv_pos, lv, hash
-void SANode::perform_slide(Vector2i dir, int push_count) {
-    Vector2i merge_lv_pos = lv_pos + (push_count + 1) * dir;
-
-    for (int dist_to_merge=0; dist_to_merge <= push_count; ++dist_to_merge) {
-        Vector2i curr_lv_pos = merge_lv_pos - dist_to_merge * dir;
-        uint16_t prev_sid = get_lv_sid(curr_lv_pos - dir);
-        uint16_t result_sid = prev_sid;
-
-        if (dist_to_merge == 0) {
-            uint16_t curr_sid = get_lv_sid(curr_lv_pos);
-            result_sid = get_merged_stuff_id(prev_sid, curr_sid);
-        }
-        set_lv_sid(curr_lv_pos, result_sid);
-    }
-
-    //remove src tile
-    clear_lv_sid(lv_pos);
-
-    //update lv_pos
-    set_lv_pos(lv_pos + dir);
-}
-
 
 void SASearchNode::init_sanode(Vector2i min, Vector2i max, Vector2i start) {
     sanode = make_shared<SANode>();
     sanode->init_lv_pos(start - min);
     sanode->init_lv(min, max, start);
-}
-
-Array SASearchNode::trace_path_actions(int path_len) {
-	Array ans;
-	ans.resize(path_len);
-	int index = path_len - 1;
-	shared_ptr<SASearchNode> curr = shared_from_this();
-
-	while (curr->prev != nullptr) {
-        for (int action_index = curr->prev_actions.size() - 1; action_index >= 0; --action_index) {
-            ans[index] = curr->prev_actions[action_index];
-            --index;
-        }
-		curr = curr->prev;
-	}
-	UtilityFunctions::print("PF TRACED PATH SIZE: ", ans.size());
-	return ans;
-}
-
-//idea: do h_reduction if admissible tileid at same pos and upcoming locations in path have not been disturbed (visited or push-affected)
-    //h_reduction based on pos alone is too inaccurate
-    //calculate all admissible tile_ids at each pos, no need for ordered path or next pointers
-    //comparing entire diamond/square is unnecessary
-        //but what if a supportive tile for prev path is visited or push-affected?
-            //track admissible supportive tile_ids too?
-                //but what if there is a way to affect 2+ supportive tiles without invalidating prev path?
-            //NAH, ignore supportive tiles
-//account for restrictions due to pushing
-//account for Pictures/both_push_and_merge_are_admissible and generalization to higher tpl
-    //NAH, too hard; see Pictures/similar_to_both_push_and_merge_are_admissible_but_push_not_admissible
-//account for n is 2nd-to-last node, path contains merge into goal, but push is possible
-    //NAH, heuristic improvement is negligible
-//create unordered_map<lv_pos, set of indices at which lv_pos occurs in prev path> prev_path_indices
-    //path_informed_mda() stores largest_affected_path_index
-    //use std::set::upper_bound() to update it
-//return unnamed PathInfo object so RVO happens? NAH, that still requires copying the members
-void SASearchNode::trace_path_info(int path_len, PathInfo& pi) {
-
-}
-
-//get lv_pos and tile_id from SASearchNode
-//combine prev_path_indices and admissible_tile_ids into single structure? NAH too complicated
-bool SASearchNode::is_on_prev_path(PathInfo& pi, int largest_affected_path_index) {
-    auto indices_itr = pi.path_indices.find(sanode->lv_pos);
-    if (indices_itr == pi.path_indices.end()) {
-        return false;
-    }
-
-    //loop through admissible indices (inclusive of largest_affected_path_index)
-    set<unsigned int>& prev_path_indices_at_lv_pos = (*indices_itr).second;
-    for (auto index_itr = prev_path_indices_at_lv_pos.lower_bound(largest_affected_path_index); index_itr != prev_path_indices_at_lv_pos.end(); ++index_itr) {
-        auto tile_ids_itr = pi.admissible_tile_ids.find(PathNode(sanode->lv_pos, *index_itr));
-        if (tile_ids_itr != pi.admissible_tile_ids.end() && (*tile_ids_itr).second[get_tile_id(sanode->get_lv_sid(sanode->lv_pos))]) {
-            return true;
-        }
-    }
-    return false;
 }
 
 //updates prev, prev_push_count
@@ -621,6 +564,69 @@ void SASearchNode::transfer_neighbors(shared_ptr<SASearchNode> better_dist, int 
         }
     }
     neighbors.clear();
+}
+
+Array SASearchNode::trace_path_actions(int path_len) {
+	Array ans;
+	ans.resize(path_len);
+	int index = path_len - 1;
+	shared_ptr<SASearchNode> curr = shared_from_this();
+
+	while (curr->prev != nullptr) {
+        for (int action_index = curr->prev_actions.size() - 1; action_index >= 0; --action_index) {
+            ans[index] = curr->prev_actions[action_index];
+            --index;
+        }
+		curr = curr->prev;
+	}
+	UtilityFunctions::print("PF TRACED PATH SIZE: ", ans.size());
+	return ans;
+}
+
+//idea: do h_reduction if admissible tileid at same pos and upcoming locations in path have not been disturbed (visited or push-affected)
+    //only trace nodes inside diamond/square
+        //use lazy/just-in-time checking
+    //trace nodes along jump (if there is jump)
+    //h_reduction based on pos alone is too inaccurate
+    //calculate all admissible tile_ids at each pos, no need for ordered path or next pointers
+    //comparing entire diamond/square is unnecessary
+        //but what if a supportive tile for prev path is visited or push-affected?
+            //track admissible supportive tile_ids too?
+                //but what if there is a way to affect 2+ supportive tiles without invalidating prev path?
+            //NAH, ignore supportive tiles
+//account for restrictions due to pushing
+//account for Pictures/both_push_and_merge_are_admissible and generalization to higher tpl
+    //NAH, too hard; see Pictures/similar_to_both_push_and_merge_are_admissible_but_push_not_admissible
+//account for n is 2nd-to-last node, path contains merge into goal, but push is possible
+    //NAH, heuristic improvement is negligible
+//create unordered_map<lv_pos, set of indices at which lv_pos occurs in prev path> prev_path_indices
+    //path_informed_mda() stores largest_affected_path_index
+    //use std::set::upper_bound() to update it
+//return unnamed PathInfo object so RVO happens? NAH, that still requires copying the members
+void SASearchNode::trace_path_info(int path_len, PathInfo& pi, int max_radius, int iw_shape_id) {
+    shared_ptr<SASearchNode> curr = shared_from_this();
+    while (curr->prev != nullptr) {
+
+    }
+}
+
+//get lv_pos and tile_id from SASearchNode
+//combine prev_path_indices and admissible_tile_ids into single structure? NAH too complicated
+bool SASearchNode::is_on_prev_path(PathInfo& pi, int largest_affected_path_index) {
+    auto indices_itr = pi.path_indices.find(sanode->lv_pos);
+    if (indices_itr == pi.path_indices.end()) {
+        return false;
+    }
+
+    //loop through admissible indices (inclusive of largest_affected_path_index)
+    set<unsigned int>& prev_path_indices_at_lv_pos = (*indices_itr).second;
+    for (auto index_itr = prev_path_indices_at_lv_pos.lower_bound(largest_affected_path_index); index_itr != prev_path_indices_at_lv_pos.end(); ++index_itr) {
+        auto tile_ids_itr = pi.admissible_tile_ids.find(PathNode(sanode->lv_pos, *index_itr));
+        if (tile_ids_itr != pi.admissible_tile_ids.end() && (*tile_ids_itr).second[get_tile_id(sanode->get_lv_sid(sanode->lv_pos))]) {
+            return true;
+        }
+    }
+    return false;
 }
 
 
