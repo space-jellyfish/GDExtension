@@ -1141,18 +1141,15 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
 
 //idea: iteratively widening diamond; ignore tiles outside of diamond when searching to obtain a path that informs search in the next iteration
 //iwd SANodes should preserve all back_ids, even ones outside the diamond
-//if prev iteration has multiple optimal paths, use all of them? NAH, prioritize speed
 //only use path from the previous iteration bc older iterations' paths are less relevant
     //using all paths would case uneven reduction biased towards nodes near the goal
-//only apply h_reduction to nodes inside diamond
-//only apply h_reduction if agent tile_id matches or node is non-critical
-    //does entire diamond have to match?
-    //apply to all SANodes that are feasibly following prev path?
+//only check for h_reduction if within prev_radius + 1 of dest
 //allow reduction to negative h?
 //use h_reduction proportional to pathlen/manhattan_radius since larger radius is harder
 //not optimal bc path-informed heuristic is inconsistent
 //for multi-agent version, iwd SANodes are reusable
 //if an iterative search ends with no valid path found, don't update any heuristics in the next iteration
+//if prev iteration has multiple optimal paths, use all of them? NAH, prioritize speed
 Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     //early exit to skip SANode construction
     if (start == end) {

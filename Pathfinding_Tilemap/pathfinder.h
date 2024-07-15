@@ -96,6 +96,11 @@ enum MASearchId {
     ICTS, //increasing cost tree search
     CBS, //conflict-based search
         //add constraints on wake in addition to tile itself
+    QCBS, //quant cbs; include conflicts with tiles previously affected by other agents
+    QRCBS, //quant request-and-conflict-based search; send (request r, int max_cost) pairs for help
+        //request types:
+            //move out of the way? handle via constraint tree
+            //change tile_id at pos to one in a set of values
 };
 
 enum ActionId {
@@ -302,7 +307,7 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
 
     Array trace_path_actions(int path_len);
     template<typename RadiusGetter>
-    void trace_path_info(int path_len, PathInfo& pi, int radius, const RadiusGetter& get_radius);
+    unique_ptr<PathInfo> trace_path_info(int path_len, int radius, const RadiusGetter& get_radius);
     bool is_on_prev_path(PathInfo& pi, int largest_affected_path_index);
     std::function<unsigned int(Vector2i)> get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos);
 };
