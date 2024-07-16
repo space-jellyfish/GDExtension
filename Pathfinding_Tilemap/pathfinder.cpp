@@ -725,7 +725,9 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
 
                 //calculate cost(s)
                 //update f/g/h in pathfind_sa_*() bc they could be used differently in each search type
-                neighbor->f = curr->f + 1;
+                //optimizations (use if no duplicate code is required or there are significant savings):
+                    //if neighbor in best_dists, recycle h-cost instead of recalculating it
+                    //move f-cost calculation to after best_dists check
 
                 //check if neighbor is duplicate with equal or worse cost
                 //this is necessary since from
@@ -748,6 +750,8 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
                         best_dists.erase(it);
                     }*/
                 }
+                neighbor->f = curr->f + 1;
+
                 //if neighbor hasn't been visited, it can't be ancestor of curr => no loop
                 open.push(neighbor);
                 best_dists.insert(neighbor);
