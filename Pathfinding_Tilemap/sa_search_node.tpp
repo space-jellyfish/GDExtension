@@ -23,8 +23,9 @@
         //exclude nodes before parent of final re-entry (see Pictures/trace_path_info_should_exclude_node_if_upcoming_location_exits_shape)
     //trace nodes along jump (if there is jump) bc next iteration path might use them
     //h_reduction based on pos alone is too inaccurate
-    //calculate all admissible tile_ids at each pos, no need for ordered path or next pointers?
+    //calculate all admissible tile_ids at each pos
         //account for restrictions due to pushing
+//do admissible tile_id tracing with DP in is_on_prev_path() (from first critical/traced node with higher path_index)?
 
 //only apply h_reduction if agent tile_id matches or node is non-critical?
     //NAH, calculating admissible tile ids is more accurate
@@ -51,10 +52,13 @@ unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, con
     shared_ptr<SASearchNode> curr = shared_from_this();
     Vector2i curr_pos = curr->sanode->lv_pos;
     array<bool, TILE_ID_COUNT> next_admissible_tile_ids;
+    next_admissible_tile_ids.fill(true);
+    uint8_t partner_tile_id = TileId::EMPTY;
 
     //trace nodes inside shape
-    while (curr != nullptr && min_dist_to_outside_of_shape) {
-        int action_index = curr->prev_actions.size() - 1;
+    while (curr->prev != nullptr && min_dist_to_outside_of_shape) {
+        Vector2i prev_dir = Vector2i(sgn(curr->prev_action.x), sgn(curr->prev_action.y));
+        int prev_action_dist = get_action_dist(curr->prev_action);
 
         while (action_index >= 0 && min_dist_to_outside_of_shape) {
             //update path_indices
@@ -67,13 +71,14 @@ unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, con
             }
 
             //update admissible_tile_ids
+            
 
             
             //update path_index
             --path_index;
 
             //update curr_pos
-            curr_pos -= Vector2i(curr->prev_actions[action_index].x, curr->prev_actions[action_index].y);
+            curr_pos -= prev_dir;
 
             //update min_dist_to_outside_of_shape
             --min_dist_to_outside_of_shape;
@@ -87,10 +92,20 @@ unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, con
 
         //update curr
         curr = curr->prev;
+
+        //update partner_tile_id
+        if (curr->prev_action.z == ActionId::JUMP) {
+            partner_tile_id = TileId::EMPTY;
+        }
+        else {
+            partner_tile_id = get_tile_id(curr->sanode->get_lv_sid(curr->sanode->lv_pos + prev_dir));
+        }
     }
 
-    //trace parent of final re-entry
+    //trace start node/parent of final re-entry
+    if (curr != nullptr) {
 
+    }
 
     return pi;
 }

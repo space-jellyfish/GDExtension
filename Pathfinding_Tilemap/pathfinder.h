@@ -283,11 +283,11 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     shared_ptr<SANode> sanode;
     unsigned int g=0, h=0, f=0; //use f for dijkstra
     //for backtracing
-    vector<Vector3i> prev_actions;
     shared_ptr<SASearchNode> prev = nullptr;
+    Vector3i prev_action; //[x_displacement, y_displacement, action_id]
     unsigned int prev_push_count = 0;
     //to store intermediate results/prevent backtracking (perform_slide(), try_jump())
-    //action, {unprune_threshold, neighbor_sanode, push_count}
+    //normalized_action, {unprune_threshold, neighbor_sanode, push_count}
     //if neighbor is invalid, unprune_threshold == numeric_limits<unsigned int>::max()
     //if neighbor not pruned, unprune_threshold == 0
     //nullptr is placeholder for prune, it doesn't indicate anything in particular (creating the SANode would be wasteful)
@@ -297,7 +297,7 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     void init_sanode(Vector2i min, Vector2i max, Vector2i start);
     shared_ptr<SASearchNode> try_slide(Vector2i dir, bool allow_type_change);
     shared_ptr<SASearchNode> try_split(Vector2i dir, bool allow_type_change);
-    shared_ptr<SASearchNode> try_action(Vector3i action, Vector2i lv_end, bool allow_type_change);
+    shared_ptr<SASearchNode> try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change);
 
     shared_ptr<SASearchNode> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change);
     shared_ptr<SASearchNode> get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist);
@@ -305,7 +305,7 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     void prune_backtrack(Vector2i dir);
     void transfer_neighbors(shared_ptr<SASearchNode> better_dist, int dist_improvement);
 
-    Array trace_path_actions(int path_len);
+    Array trace_path_normalized_actions(int path_len);
     template<typename RadiusGetter>
     unique_ptr<PathInfo> trace_path_info(int path_len, int radius, const RadiusGetter& get_radius);
     bool is_on_prev_path(PathInfo& pi, int largest_affected_path_index);
@@ -454,6 +454,7 @@ int get_tile_pow(uint8_t tile_id);
 int get_signed_tile_pow(uint8_t tile_id);
 int get_tile_sign(uint8_t tile_id);
 int get_true_tile_sign(uint8_t tile_id);
+int get_action_dist(Vector3i action);
 uint8_t get_opposite_tile_id(uint8_t tile_id);
 Vector2i get_splitted_ps(Vector2i ps);
 uint8_t get_splitted_tid(uint8_t tile_id);

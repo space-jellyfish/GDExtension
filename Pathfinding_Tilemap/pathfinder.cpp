@@ -299,11 +299,11 @@ shared_ptr<SASearchNode> SASearchNode::try_split(Vector2i dir, bool allow_type_c
 }
 
 //g/h/f are default-init to 0
-//updates prev_actions for slide/split, stores result in curr->neighbors
+//updates prev_action for slide/split, stores result in curr->neighbors
 //return newly-created SASearchNode (this ensures duplicate detection works as intended)
-shared_ptr<SASearchNode> SASearchNode::try_action(Vector3i action, Vector2i lv_end, bool allow_type_change) {
+shared_ptr<SASearchNode> SASearchNode::try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change) {
     //check for stored neighbor
-    auto it = neighbors.find(action);
+    auto it = neighbors.find(normalized_action);
     if (it != neighbors.end()) {
         SANeighbor neighbor = (*it).second;
 
@@ -314,11 +314,12 @@ shared_ptr<SASearchNode> SASearchNode::try_action(Vector3i action, Vector2i lv_e
         if (neighbor.sanode) {
             shared_ptr<SASearchNode> ans = make_shared<SASearchNode>();
             ans->sanode = neighbor.sanode;
-            if (action.z == ActionId::JUMP) {
-                ans->prev_actions = vector<Vector3i>(manhattan_dist(sanode->lv_pos, ans->sanode->lv_pos), Vector3i(action.x, action.y, ActionId::SLIDE));
+            if (normalized_action.z == ActionId::JUMP) {
+                unsigned int jump_dist = manhattan_dist(sanode->lv_pos, ans->sanode->lv_pos);
+                ans->prev_action = Vector3i(jump_dist * normalized_action.x, jump_dist * normalized_action.y, ActionId::JUMP);
             }
             else {
-                ans->prev_actions = {action};
+                ans->prev_action = normalized_action;
             }
             ans->prev = shared_from_this();
             ans->prev_push_count = neighbor.push_count;
@@ -326,9 +327,9 @@ shared_ptr<SASearchNode> SASearchNode::try_action(Vector3i action, Vector2i lv_e
         }
     }
 
-    Vector2i dir(action.x, action.y);
+    Vector2i dir(normalized_action.x, normalized_action.y);
     shared_ptr<SASearchNode> ans;
-    switch(action.z) {
+    switch(normalized_action.z) {
         case ActionId::SLIDE:
             ans = try_slide(dir, allow_type_change);
             break;
@@ -342,22 +343,21 @@ shared_ptr<SASearchNode> SASearchNode::try_action(Vector3i action, Vector2i lv_e
             ans = try_slide(dir, allow_type_change);
     }
     if (ans) {
-        if (action.z != ActionId::JUMP) {
-            //update prev_actions
-            ans->prev_actions = {action};
+        if (normalized_action.z != ActionId::JUMP) {
+            ans->prev_action = normalized_action;
         }
         //update neighbors
-        neighbors[action] = {0, ans->sanode, ans->prev_push_count};
+        neighbors[normalized_action] = {0, ans->sanode, ans->prev_push_count};
     }
     else {
         //action invalid; don't unprune
-        neighbors[action] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+        neighbors[normalized_action] = {numeric_limits<unsigned int>::max(), nullptr, 0};
     }
     return ans;
 }
 
 //assume immediate neighbor is in_bounds
-//updates prev, prev_actions, prev_push_count
+//updates prev, prev_action, prev_push_count
 //doesn't change agent type/tile_id
 //only jump through empty_and_regular tiles
 //see Devlog/jump_conditions for details
@@ -461,9 +461,9 @@ shared_ptr<SASearchNode> SASearchNode::try_jump(Vector2i dir, Vector2i lv_end, b
                     continue;
                 }
 
-                Vector3i next_action = Vector3i(next_dir.dir.x, next_dir.dir.y, action_id);
+                Vector3i normalized_next_action = Vector3i(next_dir.dir.x, next_dir.dir.y, action_id);
                 //this does not create any permanent refs to curr_jp->sanode, so it can be reused for the next curr_jp
-                shared_ptr<SASearchNode> neighbor = curr_jp->try_action(next_action, lv_end, allow_type_change);
+                shared_ptr<SASearchNode> neighbor = curr_jp->try_action(normalized_next_action, lv_end, allow_type_change);
                 if (neighbor) {
                     if (!horizontal || next_dir.dir == dir || action_id != ActionId::SLIDE || next_dir.blocked || neighbor->prev_push_count) {
                         return curr_jp;
@@ -493,8 +493,7 @@ shared_ptr<SASearchNode> SASearchNode::get_jump_point(shared_ptr<SANode> prev_sa
     ans->sanode->clear_lv_sid(src_lv_pos);
 
     //prev stuff
-    Vector3i action = Vector3i(dir.x, dir.y, ActionId::SLIDE);
-    ans->prev_actions = vector<Vector3i>(jump_dist, action);
+    ans->prev_action = Vector3i(jump_dist * dir.x, jump_dist * dir.y, ActionId::JUMP);
     ans->prev = shared_from_this();
     ans->prev_push_count = 0;
 
@@ -537,17 +536,17 @@ void SASearchNode::prune_backtrack(Vector2i dir) {
 void SASearchNode::transfer_neighbors(shared_ptr<SASearchNode> better_dist, int dist_improvement) {
     unordered_map<Vector3i, SANeighbor, ActionHasher>& dest_neighbors = better_dist->neighbors;
 
-    for (auto [action, neighbor] : neighbors) {
+    for (auto [normalized_action, neighbor] : neighbors) {
         //transfer if prune is invalid-based
         if (neighbor.unprune_threshold == numeric_limits<unsigned int>::max()) {
-            if (dest_neighbors.find(action) == dest_neighbors.end()) {
-                dest_neighbors[action] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+            if (dest_neighbors.find(normalized_action) == dest_neighbors.end()) {
+                dest_neighbors[normalized_action] = {numeric_limits<unsigned int>::max(), nullptr, 0};
             }
             continue;
         }
         
         unsigned int eff_unprune_threshold = max(0, static_cast<int>(neighbor.unprune_threshold) - dist_improvement);
-        auto it = dest_neighbors.find(action);
+        auto it = dest_neighbors.find(normalized_action);
         if (it != dest_neighbors.end()) {
             SANeighbor& dest_neighbor = (*it).second;
 
@@ -560,21 +559,24 @@ void SASearchNode::transfer_neighbors(shared_ptr<SASearchNode> better_dist, int 
             }
         }
         else {
-            dest_neighbors[action] = {eff_unprune_threshold, neighbor.sanode, neighbor.push_count};
+            dest_neighbors[normalized_action] = {eff_unprune_threshold, neighbor.sanode, neighbor.push_count};
         }
     }
     neighbors.clear();
 }
 
-Array SASearchNode::trace_path_actions(int path_len) {
+Array SASearchNode::trace_path_normalized_actions(int path_len) {
 	Array ans;
 	ans.resize(path_len);
 	int index = path_len - 1;
 	shared_ptr<SASearchNode> curr = shared_from_this();
 
 	while (curr->prev != nullptr) {
-        for (int action_index = curr->prev_actions.size() - 1; action_index >= 0; --action_index) {
-            ans[index] = curr->prev_actions[action_index];
+        Vector3i normalized_prev_action = (curr->prev_action.z == ActionId::JUMP) ? Vector3i(sgn(curr->prev_action.x), sgn(curr->prev_action.y), ActionId::SLIDE) : curr->prev_action;
+        int prev_action_dist = get_action_dist(curr->prev_action);
+
+        for (int dist=0; dist < prev_action_dist; ++dist) {
+            ans[index] = normalized_prev_action;
             --index;
         }
 		curr = curr->prev;
@@ -678,7 +680,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
     //to prevent duplicate nodes with equal or worse cost from being pushed to open
     //see CBS section 4.3, duplicate detection and pruning
     //change to unordered_set<LightweightSANode> for less memory usage but no collision checking,
-    //where LightweightSANode only stores hash (for KeyEqual) and prev/prev_actions (for trace_path())
+    //where LightweightSANode only stores hash (for KeyEqual) and prev/prev_action (for trace_path())
     //IMPORTANT: not the same as closed, bc (with the exception of DIJKSTRA) best_dists is non-optimal
     //closed is redundant; shared_ptrs are stored in best_dists, so trace_path() will still work
     unordered_set<shared_ptr<SASearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> best_dists; //using f
@@ -686,7 +688,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
 
     shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
     first->init_sanode(min, max, start);
-    //first can have prev_actions and prev_push_count uninitialized
+    //first can have prev_action and prev_push_count uninitialized
     open.push(first);
     best_dists.insert(first);
 
@@ -695,7 +697,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
-            return curr->trace_path_actions(curr->f);
+            return curr->trace_path_normalized_actions(curr->f);
         }
         //best_dists check is unnecessary bc open doesn’t receive duplicate nodes
         open.pop();
@@ -712,8 +714,8 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
                 continue;
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
-                Vector3i action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(action, lv_end, allow_type_change);
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;
@@ -776,7 +778,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vecto
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos + min == end) {
-            return curr->trace_path_actions(curr->f);
+            return curr->trace_path_normalized_actions(curr->f);
         }
         //open may receive duplicate nodes (see Pictures/jpd_edge_case)
         open.pop();
@@ -800,13 +802,13 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vecto
                 if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
                     continue;
                 }
-                Vector3i action = Vector3i(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(action, lv_end, allow_type_change);
+                Vector3i normalized_action = Vector3i(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;
                 }
-                neighbor->f = curr->f + neighbor->prev_actions.size();
+                neighbor->f = curr->f + get_action_dist(neighbor->prev_action);
 
                 //place check here to catch nodes that exceed max_depth as early as possible
                 //since open << closed for typical search, generating check is not much more expensive than expanding check
@@ -844,7 +846,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
     first->init_sanode(min, max, start);
     first->h = manhattan_dist(first->sanode->lv_pos, lv_end);
     first->f = first->h;
-    //first can have prev_actions and prev_push_count uninitialized
+    //first can have prev_action and prev_push_count uninitialized
     open.push(first);
     best_dists.insert(first);
 
@@ -852,7 +854,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
-            return curr->trace_path_actions(curr->g);
+            return curr->trace_path_normalized_actions(curr->g);
         }
         //open may receive duplicate nodes (see Pictures/mda_closed_check_is_necessary)
         open.pop();
@@ -869,8 +871,8 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
                 continue;
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
-                Vector3i action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(action, lv_end, allow_type_change);
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;
@@ -934,7 +936,7 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
     }
 
     first->f = first->h;
-    //first can have prev_actions and prev_push_count uninitialized
+    //first can have prev_action and prev_push_count uninitialized
     open.push(first);
     best_dists.insert(first);
 
@@ -942,7 +944,7 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
-            return curr->trace_path_actions(curr->g);
+            return curr->trace_path_normalized_actions(curr->g);
         }
         open.pop();
         if (curr != *best_dists.find(curr)) {
@@ -958,8 +960,8 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
                 continue;
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
-                Vector3i action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(action, lv_end, allow_type_change);
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;
@@ -998,7 +1000,7 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vec
     first->init_sanode(min, max, start);
     first->h = manhattan_dist(first->sanode->lv_pos, lv_end);
     first->f = first->h;
-    //first can have prev_actions and prev_push_count uninitialized
+    //first can have prev_action and prev_push_count uninitialized
     open.push(first);
     best_dists.insert(first);
 
@@ -1006,7 +1008,7 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vec
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
-            return curr->trace_path_actions(curr->g);
+            return curr->trace_path_normalized_actions(curr->g);
         }
         //open may receive duplicate nodes (see Pictures/mda_closed_check_is_necessary, replace agent w/ 2 and empty tiles w/ 1)
         open.pop();
@@ -1026,13 +1028,13 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vec
                 if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
                     continue;
                 }
-                Vector3i action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(action, lv_end, allow_type_change);
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;
                 }
-                neighbor->g = curr->g + neighbor->prev_actions.size();
+                neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
                 neighbor->h = manhattan_dist(neighbor->sanode->lv_pos, lv_end);
                 neighbor->f = neighbor->g + neighbor->h;
 
@@ -1081,7 +1083,7 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
     }
 
     first->f = first->h;
-    //first can have prev_actions and prev_push_count uninitialized
+    //first can have prev_action and prev_push_count uninitialized
     open.push(first);
     best_dists.insert(first);
 
@@ -1089,7 +1091,7 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
-            return curr->trace_path_actions(curr->g);
+            return curr->trace_path_normalized_actions(curr->g);
         }
         open.pop();
         if (curr != *best_dists.find(curr)) {
@@ -1108,19 +1110,19 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
                 if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
                     continue;
                 }
-                Vector3i action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(action, lv_end, allow_type_change);
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
 
                 if (!neighbor) {
                     continue;
                 }
                 //nodes can generate more than once, += can cause double increment
-                neighbor->g = curr->g + neighbor->prev_actions.size();
+                neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
                 neighbor->h = rrd_resume_iad(end, min + neighbor->sanode->lv_pos, agent_type_id);
                 neighbor->f = neighbor->g + neighbor->h;
 
                 if (neighbor->g > max_depth) {
-                    curr->neighbors[action] = {numeric_limits<unsigned int>::max(), nullptr, 0}; //prune neighbor in case curr generates again
+                    curr->neighbors[normalized_action] = {numeric_limits<unsigned int>::max(), nullptr, 0}; //prune neighbor in case curr generates again
                     continue;
                 }
 
@@ -1417,6 +1419,11 @@ int get_true_tile_sign(uint8_t tile_id) {
         return 0;
     }
     return sgn(tile_id - TileId::ZERO);
+}
+
+//assume one of action.x, action.y is 0
+int get_action_dist(Vector3i action) {
+    return abs(action.x + action.y);
 }
 
 //assume tile_id isn't EMPTY
