@@ -76,7 +76,7 @@ void SANode::init_lv(Vector2i min, Vector2i max, Vector2i agent_pos)  {
                 hash ^= type_id_hash_keys[y][x][type_id];
             }
         }
-        lv.push_back(row);
+        lv.push_back(move(row));
     }
 }
 
@@ -93,7 +93,7 @@ void SANode::init_lv_back_ids(Vector2i min, Vector2i max) {
         for (int x = min.x; x < max.x; ++x) {
             row.push_back((get_back_id(Vector2i(x, y)) << TILE_AND_TYPE_ID_BITLEN) + REGULAR_TYPE_BITS);
         }
-        lv.push_back(row);
+        lv.push_back(move(row));
     }
 }
 
@@ -672,6 +672,14 @@ void SASearchNode::relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_id
     relax_admissibility(admissible_tile_ids);
 }
 
+void SASearchNode::trace_node_info(unique_ptr<PathInfo>& pi, PathNode& pn, bitset<TILE_ID_COUNT>& admissible_tile_ids) {
+    //store path_index
+    pi->lp_to_path_indices[pn.lv_pos].insert(pn.index);
+
+    //store admissible_tile_ids
+    pi->pn_to_admissible_tile_ids[pn] = admissible_tile_ids;
+}
+
 
 //for testing; return search_id's cumulative search time in ms
 double Pathfinder::get_sa_cumulative_search_time(int search_id) {
@@ -1231,7 +1239,7 @@ Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vect
     diamond->set_lv_sid(lv_end, get_stuff_id(end));
 
     while (manhattan_radius < manhattan_dist_to_end) {
-
+        
     }
 }
 

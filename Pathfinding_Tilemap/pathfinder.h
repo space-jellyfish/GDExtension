@@ -314,6 +314,7 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     std::function<unsigned int(Vector2i)> get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos);
     void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids);
     void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids, bool is_next_merge, uint8_t adjacent_tile_id);
+    void trace_node_info(unique_ptr<PathInfo>& pi, PathNode& pn, bitset<TILE_ID_COUNT>& admissible_tile_ids);
 };
 
 struct SASearchNodeHashGetter  {

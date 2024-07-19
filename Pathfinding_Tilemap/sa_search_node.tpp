@@ -58,8 +58,8 @@ unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, con
     Vector2i curr_lv_pos = curr->sanode->lv_pos;
     bitset<TILE_ID_COUNT> next_admissible_tile_ids;
     next_admissible_tile_ids.fill(true);
-    uint8_t adjacent_tile_id = TileId::EMPTY;
     bool is_next_merge = true;
+    uint8_t adjacent_tile_id = TileId::EMPTY;
 
     //trace nodes inside shape
     while (curr->prev != nullptr && min_dist_to_outside_of_shape) {
@@ -67,19 +67,8 @@ unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, con
         int prev_action_dist = get_action_dist(curr->prev_action);
 
         while (prev_action_dist > 0 && min_dist_to_outside_of_shape) {
-            //store path_index
-            auto indices_itr = pi->path_indices.find(curr_lv_pos);
-            if (indices_itr != pi->path_indices.end()) {
-                (*indices_itr).second.insert(path_index);
-            }
-            else {
-                pi->path_indices[curr_lv_pos] = {path_index};
-            }
-
-            //store admissible_tile_ids
-            //use emplace if possible
-            PathNode pn(curr_lv_pos, path_index);
             relax_admissibility(next_admissible_tile_ids, is_next_merge, adjacent_tile_id);
+            trace_node_info(pi, PathNode(curr_lv_pos, path_index), next_admissible_tile_ids);
             
             //update path_index
             --path_index;
@@ -97,6 +86,9 @@ unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, con
             --prev_action_dist;
         }
 
+        //update is_next_merge
+        is_next_merge = curr->prev_push_count == 0;
+
         //update curr
         curr = curr->prev;
 
@@ -105,9 +97,8 @@ unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, con
     }
 
     //trace start node/parent of final re-entry
-    if (curr != nullptr) {
-
-    }
+    relax_admissibility(next_admissible_tile_ids, is_next_merge, adjacent_tile_id);
+    trace_node_info(pi, PathNode(curr_lv_pos, path_index), next_admissible_tile_ids);
 
     return pi;
 }
