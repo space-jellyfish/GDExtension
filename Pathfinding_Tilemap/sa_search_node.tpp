@@ -17,6 +17,8 @@
 
 //idea: do h_reduction if tile_id is admissible and upcoming locations in path have not been disturbed (visited or push-affected)
 //i.e. apply to all SANodes that are guaranteed to be following prev path, if decision between slide/split is allowed at non-critical nodes
+    //note: prev_path (and PathInfo) could become invalid if tpl decreases
+        //increasing tpl can cause extra ZEROs to remain
     //only trace validated nodes
         //use lazy/just-in-time radius checking
         //include dest node bc h_reduction will save node expansions
@@ -25,8 +27,11 @@
     //h_reduction based on pos alone is too inaccurate
     //calculate all admissible tile_ids at each pos
         //account for restrictions due to pushing
+//to accomodate requests in QRCBS, distinguish push/merge ZERO from push/merge EMPTY
 //do admissible tile_id tracing with DP in is_on_prev_path() (from first critical/traced node with higher path_index)?
 
+//distinguish push from push-with-partner?
+    //NAH, both could be essential for prev path to work
 //only apply h_reduction if agent tile_id matches or node is non-critical?
     //NAH, calculating admissible tile ids is more accurate
 //trace nodes outside shape for useful wall info?
@@ -50,35 +55,37 @@ unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, con
     int min_dist_to_outside_of_shape = radius + 1;
     int path_index = path_len - 1;
     shared_ptr<SASearchNode> curr = shared_from_this();
-    Vector2i curr_pos = curr->sanode->lv_pos;
-    array<bool, TILE_ID_COUNT> next_admissible_tile_ids;
+    Vector2i curr_lv_pos = curr->sanode->lv_pos;
+    bitset<TILE_ID_COUNT> next_admissible_tile_ids;
     next_admissible_tile_ids.fill(true);
-    uint8_t partner_tile_id = TileId::EMPTY;
+    uint8_t adjacent_tile_id = TileId::EMPTY;
+    bool is_next_merge = true;
 
     //trace nodes inside shape
     while (curr->prev != nullptr && min_dist_to_outside_of_shape) {
         Vector2i prev_dir = Vector2i(sgn(curr->prev_action.x), sgn(curr->prev_action.y));
         int prev_action_dist = get_action_dist(curr->prev_action);
 
-        while (action_index >= 0 && min_dist_to_outside_of_shape) {
-            //update path_indices
-            auto indices_itr = pi->path_indices.find(curr_pos);
+        while (prev_action_dist > 0 && min_dist_to_outside_of_shape) {
+            //store path_index
+            auto indices_itr = pi->path_indices.find(curr_lv_pos);
             if (indices_itr != pi->path_indices.end()) {
                 (*indices_itr).second.insert(path_index);
             }
             else {
-                pi->path_indices[curr_pos] = {path_index};
+                pi->path_indices[curr_lv_pos] = {path_index};
             }
 
-            //update admissible_tile_ids
-            
-
+            //store admissible_tile_ids
+            //use emplace if possible
+            PathNode pn(curr_lv_pos, path_index);
+            relax_admissibility(next_admissible_tile_ids, is_next_merge, adjacent_tile_id);
             
             //update path_index
             --path_index;
 
-            //update curr_pos
-            curr_pos -= prev_dir;
+            //update curr_lv_pos
+            curr_lv_pos -= prev_dir;
 
             //update min_dist_to_outside_of_shape
             --min_dist_to_outside_of_shape;
@@ -86,20 +93,15 @@ unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, con
                 min_dist_to_outside_of_shape = radius + 1 - get_radius(curr->sanode->lv_pos);
             }
 
-            //update action_index
-            --action_index;
+            //update prev_action_dist
+            --prev_action_dist;
         }
 
         //update curr
         curr = curr->prev;
 
-        //update partner_tile_id
-        if (curr->prev_action.z == ActionId::JUMP) {
-            partner_tile_id = TileId::EMPTY;
-        }
-        else {
-            partner_tile_id = get_tile_id(curr->sanode->get_lv_sid(curr->sanode->lv_pos + prev_dir));
-        }
+        //update adjacent_tile_id
+        adjacent_tile_id = get_tile_id(curr->sanode->get_lv_sid(curr->sanode->lv_pos + prev_dir));
     }
 
     //trace start node/parent of final re-entry

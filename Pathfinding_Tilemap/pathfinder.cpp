@@ -586,18 +586,19 @@ Array SASearchNode::trace_path_normalized_actions(int path_len) {
 }
 
 //get lv_pos and tile_id from SASearchNode
-//combine prev_path_indices and admissible_tile_ids into single structure? NAH too complicated
+//assume array[TileId::EMPTY] == array[TileId::ZERO]
+//combine lp_to_path_indices and pn_to_admissible_tile_ids into single structure? NAH too complicated
 bool SASearchNode::is_on_prev_path(PathInfo& pi, int largest_affected_path_index) {
-    auto indices_itr = pi.path_indices.find(sanode->lv_pos);
-    if (indices_itr == pi.path_indices.end()) {
+    auto indices_itr = pi.lp_to_path_indices.find(sanode->lv_pos);
+    if (indices_itr == pi.lp_to_path_indices.end()) {
         return false;
     }
 
     //loop through admissible indices (inclusive of largest_affected_path_index)
     set<unsigned int>& prev_path_indices_at_lv_pos = (*indices_itr).second;
     for (auto index_itr = prev_path_indices_at_lv_pos.lower_bound(largest_affected_path_index); index_itr != prev_path_indices_at_lv_pos.end(); ++index_itr) {
-        auto tile_ids_itr = pi.admissible_tile_ids.find(PathNode(sanode->lv_pos, *index_itr));
-        if (tile_ids_itr != pi.admissible_tile_ids.end() && (*tile_ids_itr).second[get_tile_id(sanode->get_lv_sid(sanode->lv_pos))]) {
+        auto tile_ids_itr = pi.pn_to_admissible_tile_ids.find(PathNode(sanode->lv_pos, *index_itr));
+        if (tile_ids_itr != pi.pn_to_admissible_tile_ids.end() && (*tile_ids_itr).second[get_tile_id(sanode->get_lv_sid(sanode->lv_pos))]) {
             return true;
         }
     }
@@ -611,6 +612,64 @@ std::function<unsigned int(Vector2i)> SASearchNode::get_radius_getter(int iw_sha
         default:
             return [dest_lv_pos](Vector2i curr_lv_pos) -> unsigned int { return max(abs(curr_lv_pos.x - dest_lv_pos.x), abs(curr_lv_pos.y - dest_lv_pos.y)); };
     }
+}
+
+//for is_on_prev_path(), array[TileId::EMPTY] should be equal to array[TileId::ZERO]
+//speed up with bit operations
+void SASearchNode::relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids) {
+    /*
+    for (int i = TileId::EMPTY + 1; i < TileId::ZERO - 1; ++i) {
+        if (admissible_tile_ids[i + 1]) {
+            admissible_tile_ids[i] = true;
+        }
+    }
+    for (int i = TILE_ID_COUNT - 1; i > TileId::ZERO + 1; --i) {
+        if (admissible_tile_ids[i - 1]) {
+            admissible_tile_ids[i] = true;
+        }
+    }
+    1-14 inclusive
+    18-31 inclusive
+    */
+    uint32_t u = admissible_tile_ids.to_ulong();
+    uint32_t first = u & 0x7FFF0000; //1-15 inclusive
+    uint32_t second = u & 0x7FFF; //17-31 inclusive
+    uint32_t ans = (u & 0x80008000) + ((first | first << 1) + (second | second >> 1) & 0x7FFF7FFF);
+    admissible_tile_ids = bitset<TILE_ID_COUNT>(ans);
+}
+
+//don't restrict any tile_ids if ZERO was pushed/merged, there's no difference (bc of bubbling)
+//according to StackOverflow/37009695, return foo() works
+void SASearchNode::relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids, bool is_next_merge, uint8_t adjacent_tile_id) {
+    if (is_next_merge) {
+        if (!is_tile_unsigned(adjacent_tile_id)) {
+            bitset<TILE_ID_COUNT> new_admissible_tile_ids;
+
+            //same sign merge
+            if (get_signed_tile_pow(adjacent_tile_id) != TILE_POW_MAX && admissible_tile_ids[get_merged_tile_id(adjacent_tile_id, adjacent_tile_id)]) {
+                new_admissible_tile_ids[adjacent_tile_id] = true;
+            }
+            //zero merge
+            if (admissible_tile_ids[adjacent_tile_id]) {
+                new_admissible_tile_ids[TileId::ZERO] = true;
+                new_admissible_tile_ids[TileId::EMPTY] = true;
+            }
+            //opposite sign merge
+            if (admissible_tile_ids[TileId::ZERO]) {
+                new_admissible_tile_ids[get_opposite_tile_id(adjacent_tile_id)] = true;
+            }
+            admissible_tile_ids = new_admissible_tile_ids;
+        }
+    }
+    else {
+        if (!is_tile_unsigned(adjacent_tile_id)) {
+            admissible_tile_ids[TileId::ZERO] = false;
+            admissible_tile_ids[TileId::EMPTY] = false;
+            admissible_tile_ids[adjacent_tile_id] = false;
+            admissible_tile_ids[get_opposite_tile_id(adjacent_tile_id)] = false;
+        }
+    }
+    relax_admissibility(admissible_tile_ids);
 }
 
 

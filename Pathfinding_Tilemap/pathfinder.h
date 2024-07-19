@@ -203,8 +203,10 @@ struct PathNodeEquator {
 
 //for informing h_reductions in iterative widening searches
 struct PathInfo {
-    unordered_map<Vector2i, set<unsigned int>> path_indices; //lv_pos, indices in path
-    unordered_map<PathNode, array<bool, TILE_ID_COUNT>, PathNodeHasher, PathNodeEquator> admissible_tile_ids;
+    unordered_map<Vector2i, set<unsigned int>> lp_to_path_indices; //lv_pos, indices in path
+    //use bitset bc array<bool> doesn't support bit operation, and uint32_t doesn't support []operator
+    //for is_on_prev_path(), bitset[TileId::EMPTY] should be equal to bitset[TileId::ZERO]
+    unordered_map<PathNode, bitset<TILE_ID_COUNT>, PathNodeHasher, PathNodeEquator> pn_to_admissible_tile_ids;
 };
 
 struct IADNode {
@@ -310,6 +312,8 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     unique_ptr<PathInfo> trace_path_info(int path_len, int radius, const RadiusGetter& get_radius);
     bool is_on_prev_path(PathInfo& pi, int largest_affected_path_index);
     std::function<unsigned int(Vector2i)> get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos);
+    void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids);
+    void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids, bool is_next_merge, uint8_t adjacent_tile_id);
 };
 
 struct SASearchNodeHashGetter  {
