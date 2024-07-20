@@ -743,14 +743,14 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
     //NEEDS PROFILING with deque
     //use ptrs bc prev requires a fixed addr, faster to copy, duplicates in open use less mem
     //use shared_ptr instead of unique_ptr bc prev/neighbors also require it
-    priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeComparer> open;
+    open_sa_t open;
     //to prevent duplicate nodes with equal or worse cost from being pushed to open
     //see CBS section 4.3, duplicate detection and pruning
     //change to unordered_set<LightweightSANode> for less memory usage but no collision checking,
     //where LightweightSANode only stores hash (for KeyEqual) and prev/prev_action (for trace_path())
     //IMPORTANT: not the same as closed, bc (with the exception of DIJKSTRA) best_dists is non-optimal
     //closed is redundant; shared_ptrs are stored in best_dists, so trace_path() will still work
-    unordered_set<shared_ptr<SASearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> best_dists; //using f
+    closed_sa_t best_dists; //using f
     Vector2i lv_end = end - min;
 
     shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
@@ -832,8 +832,8 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
 
 //open and best_dists not necessarily optimal
 Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeComparer> open;
-    unordered_set<shared_ptr<SASearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> best_dists;
+    open_sa_t open;
+    closed_sa_t best_dists;
     Vector2i lv_end = end - min;
 
     shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
@@ -905,8 +905,8 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vecto
 //open and best_dists not necessarily optimal
 //closed optimal bc heuristic consistent (see SA lec5)
 Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeComparer> open;
-    unordered_set<shared_ptr<SASearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+    open_sa_t open;
+    closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
 
     shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
@@ -987,8 +987,8 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
 //open and returned path are not necessarily optimal
 //if h(first) == numeric_limits<int>::max(), exit early bc no path exists
 Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeComparer> open;
-    unordered_set<shared_ptr<SASearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+    open_sa_t open;
+    closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
     uint8_t agent_type_id = get_type_id(start);
     rrd_init_iad(end);
@@ -1059,8 +1059,8 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
 
 //closed optimal, open and best_dists not
 Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeComparer> open;
-    unordered_set<shared_ptr<SASearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+    open_sa_t open;
+    closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
 
     shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
@@ -1134,8 +1134,8 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vec
 //open and returned path are not necessarily optimal
 //if h(first) == numeric_limits<int>::max(), exit early bc no path exists
 Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeComparer> open;
-    unordered_set<shared_ptr<SASearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+    open_sa_t open;
+    closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
     uint8_t agent_type_id = get_type_id(start);
     rrd_init_iad(end);
@@ -1217,8 +1217,10 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
 //only use path from the previous iteration bc older iterations' paths are less relevant
     //using all paths would case uneven reduction biased towards nodes near the goal
 //only check for h_reduction if within prev_radius + 1 of dest
-//allow reduction to negative h?
-//use h_reduction proportional to pathlen/manhattan_radius since larger radius is harder
+//allow reduction to negative h? yes
+//use h_reduction proportional to pathlen/manhattan_radius_of_shape since larger radius is harder?
+//apply proportional h_reduction to nodes within same path?
+    //higher h_reduction for nodes closer to goal, since they have been validated already
 //not optimal bc path-informed heuristic is inconsistent
 //for multi-agent version, iwd SANodes are reusable
 //if an iterative search ends with no valid path found, don't update any heuristics in the next iteration
@@ -1296,11 +1298,45 @@ bool Pathfinder::is_immediately_trapped(Vector2i pos) {
     return false;
 }
 
-Array Pathfinder::path_informed_mda(shared_ptr<SANode> sanode, Array path, int h_reduction) {
+//closed not optimal bc path-informed heuristic not consistent
+//assume open and best_dists contain first SASearchNode
+shared_ptr<SASearchNode> Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sa_t& open, closed_sa_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction) {
+    while (!open.empty()) {
+        shared_ptr<SASearchNode> curr = open.top();
 
+        if (curr->sanode->lv_pos == lv_end) {
+            return curr;
+        }
+        open.pop();
+        if (curr != *best_dists.find(curr)) {
+            continue;
+        }
+
+        if (curr->g == max_depth) {
+            continue;
+        }
+
+        for (Vector2i dir : DIRECTIONS) {
+            if (!curr->sanode->get_dist_to_lv_edge(dir)) {
+                continue;
+            }
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
+
+                if (!neighbor) {
+                    continue;
+                }
+                neighbor->g = curr->g + 1;
+                neighbor->h = manhattan_dist(neighbor->sanode->lv_pos, lv_end);
+                neighbor->f = neighbor->g + neighbor->h;
+
+            }
+        }
+    }
 }
 
-Array Pathfinder::path_informed_hbjpmda(shared_ptr<SANode> sanode, Array path, int h_reduction) {
+shared_ptr<SASearchNode> Pathfinder::path_informed_hbjpmda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sa_t& open, closed_sa_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction) {
 
 }
 
@@ -1591,19 +1627,20 @@ void rrd_init_iad(Vector2i goal_pos) {
 int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id) {
     //assert(inconsistent_abstract_dists.find(goal_pos) != inconsistent_abstract_dists.end());
 
-    //check for stored ans
+    //check for stored ans; this requires closed bc best_dists not necessarily optimal
     auto& [open, closed, best_gs] = inconsistent_abstract_dists[goal_pos];
     auto it = closed.find(node_pos);
     if (it != closed.end()) {
+        //this requires closed to store best_dist
+        //or else an extra lookup in best_gs is required to get ans
         return (*it).second;
     }
 
     while (!open.empty()) {
         IADNode n = open.top();
 
-        //closed check is necessary bc open may receive duplicate nodes (see Pictures/rrd_iad_expanding_closed_check_is_necessary)
-        if (closed.find(n.pos) != closed.end()) {
-            //assert(n.pos != node_pos);
+        //no duplicate generation occurs, see sa_dijkstra comment for justification
+        if (n.g != best_gs[n.pos]) {
             open.pop();
             continue;
         }
@@ -1630,10 +1667,6 @@ int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id) {
             Vector2i next_pos = n.pos + dir;
 
             if (!is_compatible(agent_type_id, get_back_id(next_pos))) {
-                continue;
-            }
-            //see Pictures/rrd_iad_generating_closed_check_is_necessary
-            if (closed.find(next_pos) != closed.end()) {
                 continue;
             }
             int next_g = n.g + get_action_iad(curr_tile_id, get_tile_id(next_pos));
@@ -1689,6 +1722,7 @@ void rrd_init_cad(Vector2i goal_pos) {
 //don't use rra bc agent_pos changes
 //consistent_abstract_dists becomes invalid if tilemap or tpl[agent type] changes
 //MAX_DEPTH IS DEPRECATED
+//closed optimal bc dijkstra
 int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
     //assert(consistent_abstract_dists.find(goal_pos) != consistent_abstract_dists.end());
 
@@ -1704,9 +1738,7 @@ int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
     while (!open.empty()) {
         shared_ptr<CADNode> curr = open.top();
 
-        //see Pictures/rrd_cad_expanding_closed_check_is_necessary
-        it = closed.find(curr);
-        if (it != closed.end()) {
+        if (curr->g != best_gs[curr->pos]) {
             open.pop();
             continue;
         }
@@ -1732,11 +1764,10 @@ int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
                 continue;
             }
             shared_ptr<CADNode> neighbor = make_shared<CADNode>(next_pos, 0, curr, dir);
-            if (closed.find(neighbor) != closed.end()) {
-                continue;
-            }
             neighbor->g = trace_cad(neighbor);
-            if (best_gs.find(next_pos) != best_gs.end() && best_gs[next_pos] <= neighbor->g) {
+
+            auto it = best_gs.find(next_pos);
+            if (it != best_gs.end() && (*it).second <= neighbor->g) {
                 continue;
             }
             open.push(neighbor);

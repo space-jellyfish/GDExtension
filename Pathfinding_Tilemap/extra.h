@@ -361,3 +361,25 @@ from pathfind_sa_hbjpiada() generating best_dists check:
 //todo: figure out how to analyze seq for breaks, and make use of prev seq result
 
 */
+
+/* rrd closed checks (replaced by best_gs checks)
+
+        //closed check is necessary bc open may receive duplicate nodes (see Pictures/rrd_iad_expanding_closed_check_is_necessary)
+        if (closed.find(n.pos) != closed.end()) {
+            //assert(n.pos != node_pos);
+            open.pop();
+            continue;
+        }
+
+            //see Pictures/rrd_iad_generating_closed_check_is_necessary
+            if (closed.find(next_pos) != closed.end()) {
+                continue;
+            }
+
+        //see Pictures/rrd_cad_expanding_closed_check_is_necessary
+        it = closed.find(curr);
+        if (it != closed.end()) {
+            open.pop();
+            continue;
+        }
+*/

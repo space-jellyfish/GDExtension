@@ -387,29 +387,31 @@ public:
 
     bool is_immediately_trapped(Vector2i pos);
     //iterative widening helper functions
-    Array path_informed_mda(shared_ptr<SANode> sanode, Array path, int h_reduction);
-    Array path_informed_hbjpmda(shared_ptr<SANode> sanode, Array path, int h_reduction);
+    shared_ptr<SASearchNode> path_informed_mda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sa_t& open, closed_sa_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction);
+    shared_ptr<SASearchNode> path_informed_hbjpmda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sa_t& open, closed_sa_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction);
 
     //move back to global scope once testing is done
     void rrd_clear_iad();
     void rrd_clear_cad();
 };
 
-typedef priority_queue<IADNode, vector<IADNode>, IADNodeComparer> pq_iad;
-typedef priority_queue<shared_ptr<CADNode>, vector<shared_ptr<CADNode>>, CADNodeComparer> pq_cad;
-typedef unordered_set<shared_ptr<CADNode>, CADNodeHasher, CADNodeEquator> us_cad;
-typedef unordered_map<Vector2i, int, Vector2iHasher> um; //node_pos, best_g
+typedef priority_queue<IADNode, vector<IADNode>, IADNodeComparer> open_iad_t;
+typedef priority_queue<shared_ptr<CADNode>, vector<shared_ptr<CADNode>>, CADNodeComparer> open_cad_t;
+typedef unordered_set<shared_ptr<CADNode>, CADNodeHasher, CADNodeEquator> closed_cad_t;
+typedef unordered_map<Vector2i, int, Vector2iHasher> best_dist_t; //node_pos, best_g
+typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeComparer> open_sa_t;
+typedef unordered_set<shared_ptr<SASearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> closed_sa_t;
 
 struct RRDIADLists {
-    pq_iad open;
-    um closed;
-    um best_gs;
+    open_iad_t open;
+    best_dist_t closed;
+    best_dist_t best_gs;
 };
 
 struct RRDCADLists {
-    pq_cad open;
-    us_cad closed;
-    um best_gs;
+    open_cad_t open;
+    closed_cad_t closed;
+    best_dist_t best_gs;
 };
 
 extern array<array<array<uint64_t, TILE_ID_COUNT - 1>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys;
