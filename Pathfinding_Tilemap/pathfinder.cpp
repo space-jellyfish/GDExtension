@@ -1217,11 +1217,15 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
 //only use path from the previous iteration bc older iterations' paths are less relevant
     //using all paths would case uneven reduction biased towards nodes near the goal
 //only check for h_reduction if within prev_radius + 1 of dest
+//not optimal bc path-informed heuristic is inconsistent
 //allow reduction to negative h? yes
+//use manhattan_dist bc iw + iada would be too inaccurate
 //use h_reduction proportional to pathlen/manhattan_radius_of_shape since larger radius is harder?
+    //NAH, see simulated annealing
 //apply proportional h_reduction to nodes within same path?
     //higher h_reduction for nodes closer to goal, since they have been validated already
-//not optimal bc path-informed heuristic is inconsistent
+//for simulated annealing version, choose random h_reduction from an interval
+    //use higher upper bound for nodes closer to goal
 //for multi-agent version, iwd SANodes are reusable
 //if an iterative search ends with no valid path found, don't update any heuristics in the next iteration
 //if prev iteration has multiple optimal paths, use all of them? NAH, prioritize speed
@@ -1299,6 +1303,7 @@ bool Pathfinder::is_immediately_trapped(Vector2i pos) {
 }
 
 //closed not optimal bc path-informed heuristic not consistent
+//return nullptr if no path exists
 //assume open and best_dists contain first SASearchNode
 shared_ptr<SASearchNode> Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sa_t& open, closed_sa_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction) {
     while (!open.empty()) {

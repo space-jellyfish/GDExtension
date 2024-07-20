@@ -84,6 +84,10 @@ enum SASearchId {
     IWDHBJPMDA,
     IWSMDA, //iterative widening square *
     IWSHBJPMDA,
+    SAIWDMDA, //simulated annealing *
+    SAIWDHBJPMDA,
+    SAIWSMDA,
+    SAIWSHBJPMDA,
 	//IDA/EPEA, QUANT, FMT/RRT
     SEARCH_END,
 };
