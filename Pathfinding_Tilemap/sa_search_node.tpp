@@ -43,7 +43,7 @@
         //NAH, ignore supportive tiles
 //create unordered_map<lv_pos, set of indices at which lv_pos occurs in prev path> prev_path_indices
     //path_informed_mda() stores largest_affected_path_index
-    //use std::set::upper_bound() to update it
+    //use std::set::lower_bound() to update it
 //account for Pictures/both_push_and_merge_are_admissible and generalization to higher tpl
     //NAH, too hard; see Pictures/similar_to_both_push_and_merge_are_admissible_but_push_not_admissible
 //account for n is 2nd-to-last node, path contains merge into goal, but push is possible

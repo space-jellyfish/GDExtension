@@ -588,17 +588,17 @@ Array SASearchNode::trace_path_normalized_actions(int path_len) {
 //get lv_pos and tile_id from SASearchNode
 //assume array[TileId::EMPTY] == array[TileId::ZERO]
 //combine lp_to_path_indices and pn_to_admissible_tile_ids into single structure? NAH too complicated
-bool SASearchNode::is_on_prev_path(PathInfo& pi, int largest_affected_path_index) {
-    auto indices_itr = pi.lp_to_path_indices.find(sanode->lv_pos);
-    if (indices_itr == pi.lp_to_path_indices.end()) {
+bool SASearchNode::is_on_prev_path(unique_ptr<PathInfo>& pi, int largest_affected_path_index) {
+    auto indices_itr = pi->lp_to_path_indices.find(sanode->lv_pos);
+    if (indices_itr == pi->lp_to_path_indices.end()) {
         return false;
     }
 
     //loop through admissible indices (inclusive of largest_affected_path_index)
-    set<unsigned int>& prev_path_indices_at_lv_pos = (*indices_itr).second;
+    std::set<unsigned int>& prev_path_indices_at_lv_pos = (*indices_itr).second;
     for (auto index_itr = prev_path_indices_at_lv_pos.lower_bound(largest_affected_path_index); index_itr != prev_path_indices_at_lv_pos.end(); ++index_itr) {
-        auto tile_ids_itr = pi.pn_to_admissible_tile_ids.find(PathNode(sanode->lv_pos, *index_itr));
-        if (tile_ids_itr != pi.pn_to_admissible_tile_ids.end() && (*tile_ids_itr).second[get_tile_id(sanode->get_lv_sid(sanode->lv_pos))]) {
+        auto tile_ids_itr = pi->pn_to_admissible_tile_ids.find(PathNode(sanode->lv_pos, *index_itr));
+        if (tile_ids_itr != pi->pn_to_admissible_tile_ids.end() && (*tile_ids_itr).second[get_tile_id(sanode->get_lv_sid(sanode->lv_pos))]) {
             return true;
         }
     }
@@ -1220,12 +1220,12 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
 //not optimal bc path-informed heuristic is inconsistent
 //allow reduction to negative h? yes
 //use manhattan_dist bc iw + iada would be too inaccurate
-//use h_reduction proportional to pathlen/manhattan_radius_of_shape since larger radius is harder?
-    //NAH, see simulated annealing
+//use h_reduction proportional to pathlen/manhattan_radius_of_shape since larger radius is harder
+    //NEEDS PROFILING (both speed and suboptimality); this makes path near start more suboptimal than path near goal (might be good?)
 //apply proportional h_reduction to nodes within same path?
     //higher h_reduction for nodes closer to goal, since they have been validated already
 //for simulated annealing version, choose random h_reduction from an interval
-    //use higher upper bound for nodes closer to goal
+    //use greater lower bound and smaller range for nodes closer to goal
 //for multi-agent version, iwd SANodes are reusable
 //if an iterative search ends with no valid path found, don't update any heuristics in the next iteration
 //if prev iteration has multiple optimal paths, use all of them? NAH, prioritize speed
@@ -1305,9 +1305,9 @@ bool Pathfinder::is_immediately_trapped(Vector2i pos) {
 //closed not optimal bc path-informed heuristic not consistent
 //return nullptr if no path exists
 //assume open and best_dists contain first SASearchNode
-shared_ptr<SASearchNode> Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sa_t& open, closed_sa_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction) {
+shared_ptr<SAPISearchNode> Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sapi_t& open, closed_sapi_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction) {
     while (!open.empty()) {
-        shared_ptr<SASearchNode> curr = open.top();
+        shared_ptr<SAPISearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
             return curr;
@@ -1336,12 +1336,35 @@ shared_ptr<SASearchNode> Pathfinder::path_informed_mda(int max_depth, bool allow
                 neighbor->h = manhattan_dist(neighbor->sanode->lv_pos, lv_end);
                 neighbor->f = neighbor->g + neighbor->h;
 
+                //update largest_affected_path_index
+                //does update order matter?
+                    //ensure no upcoming nodes have been affected
+                    //fix prev_path pushing a tile along, causing largest_affected_path_index to increase
+                Vector2i affected_lv_pos = curr->sanode->lv_pos;
+                for (int push_count = 0; push_count <= neighbor->prev_push_count; ++push_count) {
+                    affected_lv_pos += dir;
+                    auto indices_itr = pi->lp_to_path_indices.find(affected_lv_pos);
+                    if (indices_itr != pi->lp_to_path_indices.end()) {
+                        std::set<unsigned int>& prev_path_indices_at_lv_pos = (*indices_itr).second;
+                        //auto tile_ids_itr = (*indices_itr).lower_bound(affected_lv_pos);
+                    }
+                }
+
+                //apply h_reduction
+                if (neighbor->is_on_prev_path(pi, largest_affected_path_index)) {
+                    neighbor->h -= H_REDUCTION_BASE;
+                }
             }
         }
     }
 }
 
-shared_ptr<SASearchNode> Pathfinder::path_informed_hbjpmda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sa_t& open, closed_sa_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction) {
+shared_ptr<SAPISearchNode> Pathfinder::path_informed_hbjpmda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sapi_t& open, closed_sapi_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction) {
+
+}
+
+//assume node qualifies for h_reduction
+int Pathfinder::get_h_reduction(int radius) {
 
 }
 

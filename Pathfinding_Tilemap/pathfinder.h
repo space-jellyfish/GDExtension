@@ -8,12 +8,14 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <unordered_map>
 #include <unordered_set>
+#include <set>
 #include <queue>
 
 using namespace std;
 using namespace godot;
 
 //IMPORTANT:
+//there's a namespace conflict, specify "std::" when using std::set
 //don't leave any unjustified asserts commented out
 //after all asserts are commented out for release, they will be indistinguishable from justified asserts
 //don't use pair/tuple, use structs instead for strong typing (with member initializer lists)
@@ -130,6 +132,8 @@ const int HASH_KEY_GENERATOR_SEED = 2050;
 const int TILE_POW_MAX = 14;
 const int IAD_SEP_FACTOR = 1;
 const int IAD_SIGN_CHANGE_PENALTY = 2;
+const float H_REDUCTION_ITERATION_FACTOR = 1.0;
+const int H_REDUCTION_BASE = 2;
 const int MAX_SEARCH_WIDTH = 17;
 const int MAX_SEARCH_HEIGHT = 17;
 const int TILE_ID_BITLEN = 5;
@@ -207,7 +211,7 @@ struct PathNodeEquator {
 
 //for informing h_reductions in iterative widening searches
 struct PathInfo {
-    unordered_map<Vector2i, set<unsigned int>> lp_to_path_indices; //lv_pos, indices in path
+    unordered_map<Vector2i, std::set<unsigned int>> lp_to_path_indices; //lv_pos, indices in path
     //use bitset bc array<bool> doesn't support bit operation, and uint32_t doesn't support []operator
     //for is_on_prev_path(), bitset[TileId::EMPTY] should be equal to bitset[TileId::ZERO]
     unordered_map<PathNode, bitset<TILE_ID_COUNT>, PathNodeHasher, PathNodeEquator> pn_to_admissible_tile_ids;
@@ -314,7 +318,7 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     Array trace_path_normalized_actions(int path_len);
     template<typename RadiusGetter>
     unique_ptr<PathInfo> trace_path_info(int path_len, int radius, const RadiusGetter& get_radius);
-    bool is_on_prev_path(PathInfo& pi, int largest_affected_path_index);
+    bool is_on_prev_path(unique_ptr<PathInfo>& pi, int largest_affected_path_index);
     std::function<unsigned int(Vector2i)> get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos);
     void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids);
     void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids, bool is_next_merge, uint8_t adjacent_tile_id);
@@ -355,6 +359,12 @@ struct SASearchNodeComparer {
 };
 
 
+//single agent path informed search node
+struct SAPISearchNode : public SASearchNode {
+    int largest_affected_path_index = 0;
+};
+
+
 class Pathfinder : public Node {
     //friend struct SANode;
     GDCLASS(Pathfinder, Node);
@@ -391,8 +401,9 @@ public:
 
     bool is_immediately_trapped(Vector2i pos);
     //iterative widening helper functions
-    shared_ptr<SASearchNode> path_informed_mda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sa_t& open, closed_sa_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction);
-    shared_ptr<SASearchNode> path_informed_hbjpmda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sa_t& open, closed_sa_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction);
+    shared_ptr<SAPISearchNode> path_informed_mda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sapi_t& open, closed_sapi_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction);
+    shared_ptr<SAPISearchNode> path_informed_hbjpmda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sapi_t& open, closed_sapi_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction);
+    int get_h_reduction(int radius);
 
     //move back to global scope once testing is done
     void rrd_clear_iad();
@@ -405,6 +416,8 @@ typedef unordered_set<shared_ptr<CADNode>, CADNodeHasher, CADNodeEquator> closed
 typedef unordered_map<Vector2i, int, Vector2iHasher> best_dist_t; //node_pos, best_g
 typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeComparer> open_sa_t;
 typedef unordered_set<shared_ptr<SASearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> closed_sa_t;
+typedef priority_queue<shared_ptr<SAPISearchNode>, vector<shared_ptr<SAPISearchNode>>, SASearchNodeComparer> open_sapi_t;
+typedef unordered_set<shared_ptr<SAPISearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> closed_sapi_t;
 
 struct RRDIADLists {
     open_iad_t open;
