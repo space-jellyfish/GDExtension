@@ -1225,6 +1225,7 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
 //apply proportional h_reduction to nodes within same path?
     //higher h_reduction for nodes closer to goal, since they have been validated already
 //use a reduced h_reduction if upcoming location in path has been affected?
+    //NAH, largest_affected_path_index update in path_informed_mda() accounts for pushing that occurs in prev_path
 //for simulated annealing version, choose random h_reduction from an interval
     //use greater lower bound and smaller range for nodes closer to goal
 //for multi-agent version, iwd SANodes are reusable
