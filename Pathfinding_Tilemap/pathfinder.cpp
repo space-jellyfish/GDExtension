@@ -1224,6 +1224,7 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
     //NEEDS PROFILING (both speed and suboptimality); this makes path near start more suboptimal than path near goal (might be good?)
 //apply proportional h_reduction to nodes within same path?
     //higher h_reduction for nodes closer to goal, since they have been validated already
+//use a reduced h_reduction if upcoming location in path has been affected?
 //for simulated annealing version, choose random h_reduction from an interval
     //use greater lower bound and smaller range for nodes closer to goal
 //for multi-agent version, iwd SANodes are reusable
@@ -1340,13 +1341,14 @@ shared_ptr<SAPISearchNode> Pathfinder::path_informed_mda(int max_depth, bool all
                 //does update order matter?
                     //ensure no upcoming nodes have been affected
                     //fix prev_path pushing a tile along, causing largest_affected_path_index to increase
+                        //if prev action is part of prev_path, ignore prev_push_count when updating largest_affected_path_index
                 Vector2i affected_lv_pos = curr->sanode->lv_pos;
                 for (int push_count = 0; push_count <= neighbor->prev_push_count; ++push_count) {
                     affected_lv_pos += dir;
                     auto indices_itr = pi->lp_to_path_indices.find(affected_lv_pos);
                     if (indices_itr != pi->lp_to_path_indices.end()) {
                         std::set<unsigned int>& prev_path_indices_at_lv_pos = (*indices_itr).second;
-                        //auto tile_ids_itr = (*indices_itr).lower_bound(affected_lv_pos);
+                        //auto index_itr = (*indices_itr).lower_bound(affected_lv_pos);
                     }
                 }
 
