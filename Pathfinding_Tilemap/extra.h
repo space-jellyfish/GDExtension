@@ -383,3 +383,27 @@ from pathfind_sa_hbjpiada() generating best_dists check:
             continue;
         }
 */
+
+/* from update min_dist_to_outside_of_shape in trace_path_informers()
+min_validated_path_index is redundant bc trace_path_informers() only traces validated nodes
+
+                //set min_validated_path_index
+                if (path_index > pi->min_validated_path_index && !min_dist_to_outside_of_shape) {
+                    pi->min_validated_path_index = path_index;
+                }
+*/
+
+/* SAPISearchNode::init_largest_affected_path_index()
+    for (int push_count = 1; push_count <= prev_push_count; ++push_count) {
+        affected_lv_pos += dir;
+        auto indices_itr = pi->lp_to_path_indices.find(affected_lv_pos);
+        if (indices_itr != pi->lp_to_path_indices.end()) {
+            //prev_path visits affected_lv_pos
+            std::set<int>& prev_path_indices_at_lp = (*indices_itr).second;
+            auto index_itr = prev_path_indices_at_lp.lower_bound(largest_affected_path_index);
+            if (index_itr != prev_path_indices_at_lp.end()) {
+                largest_affected_path_index = *index_itr;
+            }
+        }
+    }
+*/

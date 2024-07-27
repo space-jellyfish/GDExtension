@@ -1,5 +1,3 @@
-//#include "pathfinder.h"
-
 #ifndef SA_SEARCH_NODE_TPP
 #define SA_SEARCH_NODE_TPP
 
@@ -9,6 +7,349 @@
 
 #include "pathfinder.h"
 
+
+template <typename SASearchNode_t>
+void SASearchNodeBase<SASearchNode_t>::init_sanode(Vector2i min, Vector2i max, Vector2i start) {
+    sanode = make_shared<SANode>();
+    sanode->init_lv_pos(start - min);
+    sanode->init_lv(min, max, start);
+}
+
+//updates prev, prev_push_count
+template <typename SASearchNode_t>
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_slide(Vector2i dir, bool allow_type_change) {
+    int push_count = sanode->get_slide_push_count(dir, allow_type_change);
+    if (push_count != -1) {
+        shared_ptr<SASearchNode_t> m = make_shared<SASearchNode_t>();
+        m->sanode = make_shared<SANode>(*sanode);
+        m->prev = shared_from_this();
+        m->prev_push_count = push_count;
+        m->prune_backtrack(dir);
+        m->sanode->perform_slide(dir, push_count);
+        return m;
+    }
+    return nullptr;
+}
+
+//updates prev, prev_push_count
+template <typename SASearchNode_t>
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_split(Vector2i dir, bool allow_type_change) {
+    uint16_t src_sid = sanode->get_lv_sid(sanode->lv_pos);
+    int src_pow = get_tile_pow(get_tile_id(src_sid));
+    if (!is_pow_splittable(src_pow)) {
+        return nullptr;
+    }
+
+    //halve src tile, try_slide, then (re)set its tile_id
+    //splitted is new tile, splitter is old tile
+    uint16_t untyped_split_sid = get_back_bits(src_sid) + get_splitted_tid(get_tile_id(src_sid));
+    uint16_t splitted_sid = untyped_split_sid + get_type_bits(src_sid);
+    sanode->set_lv_sid(sanode->lv_pos, splitted_sid);
+    shared_ptr<SASearchNode_t> ans = try_slide(dir, allow_type_change);
+    if (ans != nullptr) {
+        //insert splitter tile
+        uint16_t splitter_sid = untyped_split_sid + REGULAR_TYPE_BITS;
+        ans->sanode->set_lv_sid(sanode->lv_pos, splitter_sid);
+    }
+    //reset src tile in this
+    sanode->set_lv_sid(sanode->lv_pos, src_sid);
+
+    return ans;
+}
+
+//g/h/f are default-init to 0
+//updates prev_action for slide/split, stores result in curr->neighbors
+//return newly-created SASearchNode (this ensures duplicate detection works as intended)
+template <typename SASearchNode_t>
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change) {
+    //check for stored neighbor
+    auto it = neighbors.find(normalized_action);
+    if (it != neighbors.end()) {
+        SANeighbor neighbor = (*it).second;
+
+        if (neighbor.unprune_threshold) {
+            //pruned or action invalid
+            return nullptr;
+        }
+        if (neighbor.sanode) {
+            shared_ptr<SASearchNode_t> ans = make_shared<SASearchNode_t>();
+            ans->sanode = neighbor.sanode;
+            if (normalized_action.z == ActionId::JUMP) {
+                unsigned int jump_dist = manhattan_dist(sanode->lv_pos, ans->sanode->lv_pos);
+                ans->prev_action = Vector3i(jump_dist * normalized_action.x, jump_dist * normalized_action.y, ActionId::JUMP);
+            }
+            else {
+                ans->prev_action = normalized_action;
+            }
+            ans->prev = shared_from_this();
+            ans->prev_push_count = neighbor.push_count;
+            return ans;
+        }
+    }
+
+    Vector2i dir(normalized_action.x, normalized_action.y);
+    shared_ptr<SASearchNode_t> ans;
+    switch(normalized_action.z) {
+        case ActionId::SLIDE:
+            ans = try_slide(dir, allow_type_change);
+            break;
+        case ActionId::SPLIT:
+            ans = try_split(dir, allow_type_change);
+            break;
+        case ActionId::JUMP:
+            ans = try_jump(dir, lv_end, allow_type_change);
+            break;
+        default:
+            ans = try_slide(dir, allow_type_change);
+    }
+    if (ans) {
+        if (normalized_action.z != ActionId::JUMP) {
+            ans->prev_action = normalized_action;
+        }
+        //update neighbors
+        neighbors[normalized_action] = {0, ans->sanode, ans->prev_push_count};
+    }
+    else {
+        //action invalid; don't unprune
+        neighbors[normalized_action] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+    }
+    return ans;
+}
+
+//assume immediate neighbor is in_bounds
+//updates prev, prev_action, prev_push_count
+//doesn't change agent type/tile_id
+//only jump through empty_and_regular tiles
+//see Devlog/jump_conditions for details
+//when generating from jp, generate split in all dirs, generate slide iff next tile isn't empty_and_regular
+template <typename SASearchNode_t>
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change) {
+    //check bounds NAH
+    //check empty
+    Vector2i curr_pos = sanode->lv_pos + dir;
+    if (!is_tile_empty_and_regular(sanode->get_lv_sid(curr_pos))) {
+        return nullptr;
+    }
+
+    //init next_dirs
+    uint8_t src_type_id = get_type_id(sanode->get_lv_sid(sanode->lv_pos));
+    bool horizontal = (H_DIRS.find(dir) != H_DIRS.end());
+    vector<NextDir> next_dirs;
+    Vector2i perp_dir1 = horizontal ? Vector2i(0, 1) : Vector2i(1, 0);
+    Vector2i perp_dir2 = horizontal ? Vector2i(0, -1) : Vector2i(-1, 0);
+    for (Vector2i next_dir : {perp_dir1, perp_dir2}) {
+        if (!sanode->get_dist_to_lv_edge(next_dir)) {
+            next_dirs.emplace_back(next_dir, false, false);
+            continue;
+        }
+        uint16_t next_stuff_id = sanode->get_lv_sid(sanode->lv_pos + next_dir);
+        bool blocked = !(is_tile_empty_and_regular(next_stuff_id) && is_compatible(src_type_id, get_back_id(next_stuff_id)));
+        next_dirs.emplace_back(next_dir, true, blocked);
+    }
+    int dist_to_lv_edge = sanode->get_dist_to_lv_edge(dir);
+    int curr_dist = 1;
+    next_dirs.emplace_back(dir, curr_dist < dist_to_lv_edge, false);
+    shared_ptr<SASearchNode_t> curr_jp;
+
+    while (curr_dist <= dist_to_lv_edge) {
+        uint16_t curr_stuff_id = sanode->get_lv_sid(curr_pos);
+
+        //check obstruction
+        if (!is_tile_empty_and_regular(curr_stuff_id) || !is_compatible(src_type_id, get_back_id(curr_stuff_id))) {
+            return nullptr;
+        }
+
+        //get current jump point; reuse sanode if possible
+        shared_ptr<SANode> prev_sanode = (curr_dist > 1) ? curr_jp->sanode : nullptr;
+        curr_jp = get_jump_point(prev_sanode, dir, curr_pos, curr_dist);
+
+        //check lv_end
+        if (curr_pos == lv_end) {
+            return curr_jp;
+        }
+
+        //check for jump conditions
+        for (NextDir& next_dir : next_dirs) {
+            //bound check
+            if (!next_dir.in_bounds) { //once false, in_bounds stays false
+                //curr_jp->prune_invalid_action_ids(next_dir.dir); //redundant, pathfind_sa_*() does bounds check
+                continue;
+            }
+
+            //update in_bounds
+            if (next_dir.dir == dir) {
+                next_dir.in_bounds = curr_dist + 1 < dist_to_lv_edge;
+            }
+
+            //compatibility check
+            uint16_t next_stuff_id = sanode->get_lv_sid(curr_pos + next_dir.dir);
+            bool next_compatible = is_compatible(src_type_id, get_back_id(next_stuff_id));
+            bool next_empty_and_regular = is_tile_empty_and_regular(next_stuff_id);
+            if (!next_compatible) {
+                curr_jp->prune_invalid_action_ids(next_dir.dir);
+                //update blocked
+                next_dir.blocked = !(next_empty_and_regular && next_compatible);
+                continue;
+            }
+
+            //next empty check
+            if (next_dir.dir == dir && next_empty_and_regular) {
+                continue;
+            }
+
+            //prune jump if horizontal, perp, and not blocked
+            if (horizontal && next_dir.dir != dir && !next_dir.blocked) {
+                curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP)] = {1, nullptr, 0};
+            }
+
+            //prune slide if empty, prune jump if not
+            if (next_empty_and_regular) {
+                curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::SLIDE)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+            }
+            else {
+                curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+            }
+
+            //horizontal perp empty check
+            if (horizontal && next_dir.dir != dir && next_empty_and_regular && next_dir.blocked) {
+                return curr_jp;
+            }
+
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
+                //store next_action result in curr_jp->neighbors and if valid, return curr_jp
+                //!(vertical && next_dir.dir == dir && empty) bc "next empty check"
+                if (action_id == ActionId::JUMP && (horizontal || !next_empty_and_regular)) {
+                    continue;
+                }
+
+                Vector3i normalized_next_action = Vector3i(next_dir.dir.x, next_dir.dir.y, action_id);
+                //this does not create any permanent refs to curr_jp->sanode, so it can be reused for the next curr_jp
+                shared_ptr<SASearchNode_t> neighbor = curr_jp->try_action(normalized_next_action, lv_end, allow_type_change);
+                if (neighbor) {
+                    if (!horizontal || next_dir.dir == dir || action_id != ActionId::SLIDE || next_dir.blocked || neighbor->prev_push_count) {
+                        return curr_jp;
+                    }
+                }
+            }
+
+            //update blocked
+            next_dir.blocked = !(next_empty_and_regular && next_compatible);
+        }
+
+        curr_pos += dir;
+        ++curr_dist;
+    }
+
+    return nullptr;
+}
+
+//assume jp_pos != src_lv_pos
+//assume jp_pos is within bounds
+template <typename SASearchNode_t>
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist) {
+    shared_ptr<SASearchNode_t> ans = make_shared<SASearchNode_t>();
+    ans->sanode = prev_sanode ? prev_sanode : make_shared<SANode>(*sanode);
+    Vector2i src_lv_pos = ans->sanode->lv_pos;
+    ans->sanode->set_lv_pos(jp_pos);
+    ans->sanode->set_lv_sid(jp_pos, get_jumped_stuff_id(ans->sanode->get_lv_sid(src_lv_pos), ans->sanode->get_lv_sid(jp_pos)));
+    ans->sanode->clear_lv_sid(src_lv_pos);
+
+    //prev stuff
+    ans->prev_action = Vector3i(jump_dist * dir.x, jump_dist * dir.y, ActionId::JUMP);
+    ans->prev = shared_from_this();
+    ans->prev_push_count = 0;
+
+    //prune stuff
+    ans->neighbors[Vector3i(-dir.x, -dir.y, ActionId::SLIDE)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+    ans->neighbors[Vector3i(-dir.x, -dir.y, ActionId::JUMP)] = {2 * jump_dist + 1, sanode, 0}; //see Pictures/reverse_jump_unprune_threshold
+
+    return ans;
+}
+
+//prune all actions in dir
+template <typename SASearchNode_t>
+void SASearchNodeBase<SASearchNode_t>::prune_invalid_action_ids(Vector2i dir) {
+    for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
+        neighbors[Vector3i(dir.x, dir.y, action_id)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+    }
+}
+
+//assume prev is set correctly
+template <typename SASearchNode_t>
+void SASearchNodeBase<SASearchNode_t>::prune_backtrack(Vector2i dir) {
+    //backtrack prevention: prune curr in neighbor->neighbors when storing neighbor in curr->neighbors
+    //skip slide if -dir and prev slide merged with empty or prev split merged with empty
+    //skip split if -dir and prev slide merged with same sign regular or prev split merged with same sign regular
+    //unprune if there is 3+ dist improvement ({n, n+1} -> {n-1, n-2})
+    uint16_t neighbor_sid = sanode->get_lv_sid(sanode->lv_pos + dir);
+    uint8_t src_tile_id = get_tile_id(sanode->get_lv_sid(sanode->lv_pos));
+    uint8_t neighbor_tile_id = get_tile_id(neighbor_sid);
+    uint8_t neighbor_type_id = get_type_id(neighbor_sid);
+    if (is_tile_empty_and_regular(neighbor_sid)) {
+        neighbors[Vector3i(-dir.x, -dir.y, ActionId::SLIDE)] = {3, prev->sanode, 0};
+    }
+    if (is_same_sign_merge(src_tile_id, neighbor_tile_id) && neighbor_type_id == TypeId::REGULAR) {
+        neighbors[Vector3i(-dir.x, -dir.y, ActionId::SPLIT)] = {3, prev->sanode, 0};
+    }
+}
+
+//WARNING: use of this function invalidates the assumption that stored neighbors have the same g/h/f costs
+//assume better_dist isn't the same, but compares equal to curr (same lv and lv_pos)
+//if there are two prunes on the same action, keep the stronger one (higher unprune_threshold)
+//since better_dist has better dist, curr will never generate again, so its neighbors can be cleared
+template <typename SASearchNode_t>
+void SASearchNodeBase<SASearchNode_t>::transfer_neighbors(shared_ptr<SASearchNode_t> better_dist, int dist_improvement) {
+    unordered_map<Vector3i, SANeighbor, ActionHasher>& dest_neighbors = better_dist->neighbors;
+
+    for (auto [normalized_action, neighbor] : neighbors) {
+        //transfer if prune is invalid-based
+        if (neighbor.unprune_threshold == numeric_limits<unsigned int>::max()) {
+            if (dest_neighbors.find(normalized_action) == dest_neighbors.end()) {
+                dest_neighbors[normalized_action] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+            }
+            continue;
+        }
+        
+        unsigned int eff_unprune_threshold = max(0, static_cast<int>(neighbor.unprune_threshold) - dist_improvement);
+        auto it = dest_neighbors.find(normalized_action);
+        if (it != dest_neighbors.end()) {
+            SANeighbor& dest_neighbor = (*it).second;
+
+            if (eff_unprune_threshold > dest_neighbor.unprune_threshold) {
+                dest_neighbor.unprune_threshold = eff_unprune_threshold;
+            }
+            if (!dest_neighbor.sanode) {
+                dest_neighbor.sanode = neighbor.sanode;
+                dest_neighbor.push_count = neighbor.push_count;
+            }
+        }
+        else {
+            dest_neighbors[normalized_action] = {eff_unprune_threshold, neighbor.sanode, neighbor.push_count};
+        }
+    }
+    neighbors.clear();
+}
+
+template <typename SASearchNode_t>
+Array SASearchNodeBase<SASearchNode_t>::trace_path_normalized_actions(int path_len) {
+	Array ans;
+	ans.resize(path_len);
+	int index = path_len - 1;
+	shared_ptr<SASearchNode_t> curr = shared_from_this();
+
+	while (curr->prev != nullptr) {
+        Vector3i normalized_prev_action = get_normalized_action(curr->prev_action);
+        int prev_action_dist = get_action_dist(curr->prev_action);
+
+        for (int dist=0; dist < prev_action_dist; ++dist) {
+            ans[index] = normalized_prev_action;
+            --index;
+        }
+		curr = curr->prev;
+	}
+	UtilityFunctions::print("PF TRACED PATH SIZE: ", ans.size());
+	return ans;
+}
 
 //validated node - a node inside shape, or the immediate parent of final re-entry into shape
 //critical node - node where agent tile_id must match in order to follow prev path
@@ -28,7 +369,7 @@
     //calculate all admissible tile_ids at each pos
         //account for restrictions due to pushing
 //to accomodate requests in QRCBS, distinguish push/merge ZERO from push/merge EMPTY
-//do admissible tile_id tracing with DP in is_on_prev_path() (from first critical/traced node with higher path_index)?
+//do admissible tile_id tracing with DP in get_virtual_path_index() (from first critical/traced node with higher path_index)?
 
 //distinguish push from push-with-partner?
     //NAH, both could be essential for prev path to work
@@ -49,12 +390,15 @@
 //account for n is 2nd-to-last node, path contains merge into goal, but push is possible
     //NAH, heuristic improvement is negligible
 //return unnamed PathInfo object so RVO happens? NAH, that still requires copying the members
-template<typename RadiusGetter>
-unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, const RadiusGetter& get_radius) {
+
+//returns pi with lp_to_path_indices and pn_to_admissible_tile_ids initialized
+template <typename SASearchNode_t>
+template <typename RadiusGetter>
+unique_ptr<PathInfo> SASearchNodeBase<SASearchNode_t>::trace_path_informers(int path_len, int radius, const RadiusGetter& get_radius) {
     unique_ptr<PathInfo> pi = make_unique<PathInfo>();
     int min_dist_to_outside_of_shape = radius + 1;
     int path_index = path_len - 1;
-    shared_ptr<SASearchNode> curr = shared_from_this();
+    shared_ptr<SASearchNode_t> curr = shared_from_this();
     Vector2i curr_lv_pos = curr->sanode->lv_pos;
     bitset<TILE_ID_COUNT> next_admissible_tile_ids;
     next_admissible_tile_ids.fill(true);
@@ -63,7 +407,7 @@ unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, con
 
     //trace nodes inside shape
     while (curr->prev != nullptr && min_dist_to_outside_of_shape) {
-        Vector2i prev_dir = Vector2i(sgn(curr->prev_action.x), sgn(curr->prev_action.y));
+        Vector2i prev_dir = get_normalized_dir(curr->prev_action);
         int prev_action_dist = get_action_dist(curr->prev_action);
 
         while (prev_action_dist > 0 && min_dist_to_outside_of_shape) {
@@ -101,6 +445,101 @@ unique_ptr<PathInfo> SASearchNode::trace_path_info(int path_len, int radius, con
     trace_node_info(pi, PathNode(curr_lv_pos, path_index), next_admissible_tile_ids);
 
     return pi;
+}
+
+//get lv_pos and tile_id from SASearchNode
+//assume array[TileId::EMPTY] == array[TileId::ZERO]
+//break ties in favor of higher path_index
+//combine lp_to_path_indices and pn_to_admissible_tile_ids into single structure? NAH too complicated
+template <typename SASearchNode_t>
+int SASearchNodeBase<SASearchNode_t>::get_virtual_path_index(unique_ptr<PathInfo>& pi, int largest_affected_path_index) {
+    auto indices_itr = pi->lp_to_path_indices.find(sanode->lv_pos);
+    if (indices_itr == pi->lp_to_path_indices.end()) {
+        return -1;
+    }
+
+    //loop through admissible indices (inclusive of largest_affected_path_index)
+    uint8_t curr_tile_id = get_tile_id(sanode->get_lv_sid(sanode->lv_pos));
+    std::set<int>& prev_path_indices_at_lp = (*indices_itr).second;
+    //init_lapi() calls lower_bound() already, see Pictures/lower_bound_is_not_necessary_in_get_virtual_path_index for casework
+    assert(prev_path_indices_at_lp.find(largest_affected_path_index) == prev_path_indices_at_lp.lower_bound(largest_affected_path_index));
+
+    for (auto index_itr = prev_path_indices_at_lp.rbegin(); index_itr.base() != prev_path_indices_at_lp.find(largest_affected_path_index); ++index_itr) {
+        auto tile_ids_itr = pi->pn_to_admissible_tile_ids.find(PathNode(sanode->lv_pos, *index_itr));
+        if (tile_ids_itr != pi->pn_to_admissible_tile_ids.end() && (*tile_ids_itr).second[curr_tile_id]) {
+            return *index_itr;
+        }
+    }
+    return -1;
+}
+
+//for get_virtual_path_index(), array[TileId::EMPTY] should be equal to array[TileId::ZERO]
+//speed up with bit operations
+template <typename SASearchNode_t>
+void SASearchNodeBase<SASearchNode_t>::relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids) {
+    /*
+    for (int i = TileId::EMPTY + 1; i < TileId::ZERO - 1; ++i) {
+        if (admissible_tile_ids[i + 1]) {
+            admissible_tile_ids[i] = true;
+        }
+    }
+    for (int i = TILE_ID_COUNT - 1; i > TileId::ZERO + 1; --i) {
+        if (admissible_tile_ids[i - 1]) {
+            admissible_tile_ids[i] = true;
+        }
+    }
+    1-14 inclusive
+    18-31 inclusive
+    */
+    uint32_t u = admissible_tile_ids.to_ulong();
+    uint32_t first = u & 0x7FFF0000; //1-15 inclusive
+    uint32_t second = u & 0x7FFF; //17-31 inclusive
+    uint32_t ans = (u & 0x80008000) + ((first | first << 1) + (second | second >> 1) & 0x7FFF7FFF);
+    admissible_tile_ids = bitset<TILE_ID_COUNT>(ans);
+}
+
+//don't restrict any tile_ids if ZERO was pushed/merged, there's no difference (bc of bubbling)
+//according to StackOverflow/37009695, return foo() works
+template <typename SASearchNode_t>
+void SASearchNodeBase<SASearchNode_t>::relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids, bool is_next_merge, uint8_t adjacent_tile_id) {
+    if (is_next_merge) {
+        if (!is_tile_unsigned(adjacent_tile_id)) {
+            bitset<TILE_ID_COUNT> new_admissible_tile_ids;
+
+            //same sign merge
+            if (get_signed_tile_pow(adjacent_tile_id) != TILE_POW_MAX && admissible_tile_ids[get_merged_tile_id(adjacent_tile_id, adjacent_tile_id)]) {
+                new_admissible_tile_ids[adjacent_tile_id] = true;
+            }
+            //zero merge
+            if (admissible_tile_ids[adjacent_tile_id]) {
+                new_admissible_tile_ids[TileId::ZERO] = true;
+                new_admissible_tile_ids[TileId::EMPTY] = true;
+            }
+            //opposite sign merge
+            if (admissible_tile_ids[TileId::ZERO]) {
+                new_admissible_tile_ids[get_opposite_tile_id(adjacent_tile_id)] = true;
+            }
+            admissible_tile_ids = new_admissible_tile_ids;
+        }
+    }
+    else {
+        if (!is_tile_unsigned(adjacent_tile_id)) {
+            admissible_tile_ids[TileId::ZERO] = false;
+            admissible_tile_ids[TileId::EMPTY] = false;
+            admissible_tile_ids[adjacent_tile_id] = false;
+            admissible_tile_ids[get_opposite_tile_id(adjacent_tile_id)] = false;
+        }
+    }
+    relax_admissibility(admissible_tile_ids);
+}
+
+template <typename SASearchNode_t>
+void SASearchNodeBase<SASearchNode_t>::trace_node_info(unique_ptr<PathInfo>& pi, PathNode& pn, bitset<TILE_ID_COUNT>& admissible_tile_ids) {
+    //store path_index
+    pi->lp_to_path_indices[pn.lv_pos].insert(pn.index);
+
+    //store admissible_tile_ids
+    pi->pn_to_admissible_tile_ids[pn] = admissible_tile_ids;
 }
 
 #endif

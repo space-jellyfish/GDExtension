@@ -190,15 +190,15 @@ struct NextDir {
 
 struct PathNode {
     Vector2i lv_pos;
-    unsigned int index;
+    int index;
 
-    PathNode(Vector2i _lv_pos, unsigned int _index) : lv_pos(_lv_pos), index(_index) {}
+    PathNode(Vector2i _lv_pos, int _index) : lv_pos(_lv_pos), index(_index) {}
 };
 
 struct PathNodeHasher {
     uint64_t operator() (const PathNode& n) const {
         uint64_t lv_pos_hash = Vector2iHasher{}(n.lv_pos);
-        uint64_t index_hash = hash<unsigned int>{}(n.index);
+        uint64_t index_hash = hash<int>{}(n.index);
         return lv_pos_hash ^ (index_hash + 0x9e3779b9 + (lv_pos_hash << 6) + (lv_pos_hash >> 2));
     }
 };
@@ -211,10 +211,11 @@ struct PathNodeEquator {
 
 //for informing h_reductions in iterative widening searches
 struct PathInfo {
-    unordered_map<Vector2i, std::set<unsigned int>> lp_to_path_indices; //lv_pos, indices in path
+    unordered_map<Vector2i, std::set<int>> lp_to_path_indices; //lv_pos, indices in path
     //use bitset bc array<bool> doesn't support bit operation, and uint32_t doesn't support []operator
-    //for is_on_prev_path(), bitset[TileId::EMPTY] should be equal to bitset[TileId::ZERO]
+    //for get_virtual_path_index(), bitset[TileId::EMPTY] should be equal to bitset[TileId::ZERO]
     unordered_map<PathNode, bitset<TILE_ID_COUNT>, PathNodeHasher, PathNodeEquator> pn_to_admissible_tile_ids;
+    Array normalized_actions;
 };
 
 struct IADNode {
@@ -289,11 +290,12 @@ struct SANeighbor {
 };
 
 //shared bc multiple children have prev pointer
-struct SASearchNode : public enable_shared_from_this<SASearchNode> {
+template <typename SASearchNode_t>
+struct SASearchNodeBase : public enable_shared_from_this<SASearchNode_t> {
     shared_ptr<SANode> sanode;
-    unsigned int g=0, h=0, f=0; //use f for dijkstra
+    int g=0, h=0, f=0; //use f for dijkstra
     //for backtracing
-    shared_ptr<SASearchNode> prev = nullptr;
+    shared_ptr<SASearchNode_t> prev = nullptr;
     Vector3i prev_action; //[x_displacement, y_displacement, action_id]
     unsigned int prev_push_count = 0;
     //to store intermediate results/prevent backtracking (perform_slide(), try_jump())
@@ -305,34 +307,47 @@ struct SASearchNode : public enable_shared_from_this<SASearchNode> {
     unordered_map<Vector3i, SANeighbor, ActionHasher> neighbors;
 
     void init_sanode(Vector2i min, Vector2i max, Vector2i start);
-    shared_ptr<SASearchNode> try_slide(Vector2i dir, bool allow_type_change);
-    shared_ptr<SASearchNode> try_split(Vector2i dir, bool allow_type_change);
-    shared_ptr<SASearchNode> try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change);
+    shared_ptr<SASearchNode_t> try_slide(Vector2i dir, bool allow_type_change);
+    shared_ptr<SASearchNode_t> try_split(Vector2i dir, bool allow_type_change);
+    shared_ptr<SASearchNode_t> try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change);
 
-    shared_ptr<SASearchNode> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change);
-    shared_ptr<SASearchNode> get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist);
+    shared_ptr<SASearchNode_t> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change);
+    shared_ptr<SASearchNode_t> get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist);
     void prune_invalid_action_ids(Vector2i dir);
     void prune_backtrack(Vector2i dir);
-    void transfer_neighbors(shared_ptr<SASearchNode> better_dist, int dist_improvement);
+    void transfer_neighbors(shared_ptr<SASearchNode_t> better_dist, int dist_improvement);
 
     Array trace_path_normalized_actions(int path_len);
-    template<typename RadiusGetter>
-    unique_ptr<PathInfo> trace_path_info(int path_len, int radius, const RadiusGetter& get_radius);
-    bool is_on_prev_path(unique_ptr<PathInfo>& pi, int largest_affected_path_index);
-    std::function<unsigned int(Vector2i)> get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos);
+    template <typename RadiusGetter>
+    unique_ptr<PathInfo> trace_path_informers(int path_len, int radius, const RadiusGetter& get_radius);
+    int get_virtual_path_index(unique_ptr<PathInfo>& pi, int largest_affected_path_index);
     void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids);
     void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids, bool is_next_merge, uint8_t adjacent_tile_id);
     void trace_node_info(unique_ptr<PathInfo>& pi, PathNode& pn, bitset<TILE_ID_COUNT>& admissible_tile_ids);
 };
 
-struct SASearchNodeHashGetter  {
-    uint64_t operator() (const shared_ptr<SASearchNode>& n) const {
+struct SASearchNode : public SASearchNodeBase<SASearchNode> {};
+
+//single agent path informed search node
+struct SAPISearchNode : public SASearchNodeBase<SAPISearchNode> {
+    int largest_affected_path_index = 0;
+    int virtual_path_index = -1;
+
+    void init_lapi(unique_ptr<PathInfo>& pi, Vector2i dir);
+    void update_lapi(std::set<int>* largest_prev_path_indices, int effective_largest_affected_path_index);
+    void update_lapi_helpers(unique_ptr<PathInfo>& pi, Vector2i affected_lv_pos, std::set<int>*& largest_prev_path_indices, int& largest_affected_lp_path_index, int& penultimate_affected_lp_path_index);
+};
+
+template <typename SASearchNode_t>
+struct SASearchNodeBaseHashGetter  {
+    uint64_t operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>& n) const {
         return n->sanode->hash;
     }
 };
 
-struct SASearchNodeEquator {
-	bool operator() (const shared_ptr<SASearchNode>& first, const shared_ptr<SASearchNode>& second) const {
+template <typename SASearchNode_t>
+struct SASearchNodeBaseEquator {
+	bool operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>& first, const shared_ptr<SASearchNodeBase<SASearchNode_t>& second) const {
 		//return (first->lv_pos == second->lv_pos && first->lv == second->lv);
         //return first->hash == second->hash && first->lv_pos == second->lv_pos && first->lv == second->lv;
         if  (first->sanode->hash == second->sanode->hash) {
@@ -346,8 +361,9 @@ struct SASearchNodeEquator {
 };
 
 //if f tied, use g; higher g indicates higher confidence
-struct SASearchNodeComparer {
-	bool operator() (const shared_ptr<SASearchNode>& first, const shared_ptr<SASearchNode>& second) {
+template <typename SASearchNode_t>
+struct SASearchNodeBaseComparer {
+	bool operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>& first, const shared_ptr<SASearchNodeBase<SASearchNode_t>& second) {
 		if (first->f > second->f) {
 			return true;
 		}
@@ -356,12 +372,6 @@ struct SASearchNodeComparer {
 		}
 		return first->g < second->g;
 	}
-};
-
-
-//single agent path informed search node
-struct SAPISearchNode : public SASearchNode {
-    int largest_affected_path_index = 0;
 };
 
 
@@ -379,7 +389,7 @@ protected:
 
 public:
     //check for numeric_limits<int>::max() to exit early if using an rrd heuristic
-    double get_sa_cumulative_search_time(int search_id);
+    double get_sa_cumulative_search_time(int sa_search_id);
     void reset_sa_cumulative_search_times();
     Array pathfind_sa(int search_id, int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
@@ -401,8 +411,11 @@ public:
 
     bool is_immediately_trapped(Vector2i pos);
     //iterative widening helper functions
-    shared_ptr<SAPISearchNode> path_informed_mda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sapi_t& open, closed_sapi_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction);
+    template <typename RadiusGetter>
+    void path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, int h_reduction, bool trace_informers, int radius, const RadiusGetter& get_radius);
+    template <typename RadiusGetter>
     shared_ptr<SAPISearchNode> path_informed_hbjpmda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sapi_t& open, closed_sapi_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction);
+    std::function<unsigned int(Vector2i)> get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos);
     int get_h_reduction(int radius);
 
     //move back to global scope once testing is done
@@ -414,10 +427,10 @@ typedef priority_queue<IADNode, vector<IADNode>, IADNodeComparer> open_iad_t;
 typedef priority_queue<shared_ptr<CADNode>, vector<shared_ptr<CADNode>>, CADNodeComparer> open_cad_t;
 typedef unordered_set<shared_ptr<CADNode>, CADNodeHasher, CADNodeEquator> closed_cad_t;
 typedef unordered_map<Vector2i, int, Vector2iHasher> best_dist_t; //node_pos, best_g
-typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeComparer> open_sa_t;
-typedef unordered_set<shared_ptr<SASearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> closed_sa_t;
-typedef priority_queue<shared_ptr<SAPISearchNode>, vector<shared_ptr<SAPISearchNode>>, SASearchNodeComparer> open_sapi_t;
-typedef unordered_set<shared_ptr<SAPISearchNode>, SASearchNodeHashGetter, SASearchNodeEquator> closed_sapi_t;
+typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeBaseComparer<SASearchNode>> open_sa_t;
+typedef unordered_set<shared_ptr<SASearchNode>, SASearchNodeBaseHashGetter<SASearchNode>, SASearchNodeBaseEquator<SASearchNode>> closed_sa_t;
+typedef priority_queue<shared_ptr<SAPISearchNode>, vector<shared_ptr<SAPISearchNode>>, SASearchNodeBaseComparer<SAPISearchNode>> open_sapi_t;
+typedef unordered_set<shared_ptr<SAPISearchNode>, SASearchNodeBaseHashGetter<SAPISearchNode>, SASearchNodeBaseEquator<SAPISearchNode>> closed_sapi_t;
 
 struct RRDIADLists {
     open_iad_t open;
@@ -489,6 +502,10 @@ uint16_t get_jumped_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
 uint8_t get_merged_tile_id(uint8_t tile_id1, uint8_t tile_id2);
 Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2);
 
+Vector2i get_normalized_dir(Vector3i action);
+Vector3i get_normalized_action(Vector3i action);
+
+
 //heuristics (only cells in lv allowed for rrd)
 //sharable across multiple pathfind()s with different min, max (all positions are global)
 //if rrd finds that goal_pos is enclosed, return numeric_limits<int>::max() so pathfinder can exit early
@@ -511,5 +528,6 @@ int manhattan_dist(Vector2i pos1, Vector2i pos2);
 
 //templated implementations
 #include "sa_search_node.tpp"
+#include "pathfinder.tpp"
 
 #endif
