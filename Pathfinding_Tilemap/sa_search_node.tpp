@@ -12,7 +12,7 @@ template <typename SASearchNode_t>
 void SASearchNodeBase<SASearchNode_t>::init_sanode(Vector2i min, Vector2i max, Vector2i start) {
     sanode = make_shared<SANode>();
     sanode->init_lv_pos(start - min);
-    sanode->init_lv(min, max, start);
+    sanode->init_lv(min, max);
 }
 
 //updates prev, prev_push_count
@@ -222,7 +222,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
                     continue;
                 }
 
-                Vector3i normalized_next_action = Vector3i(next_dir.dir.x, next_dir.dir.y, action_id);
+                Vector3i normalized_next_action(next_dir.dir.x, next_dir.dir.y, action_id);
                 //this does not create any permanent refs to curr_jp->sanode, so it can be reused for the next curr_jp
                 shared_ptr<SASearchNode_t> neighbor = curr_jp->try_action(normalized_next_action, lv_end, allow_type_change);
                 if (neighbor) {
@@ -394,8 +394,7 @@ Array SASearchNodeBase<SASearchNode_t>::trace_path_normalized_actions(int path_l
 //returns pi with lp_to_path_indices and pn_to_admissible_tile_ids initialized
 template <typename SASearchNode_t>
 template <typename RadiusGetter>
-unique_ptr<PathInfo> SASearchNodeBase<SASearchNode_t>::trace_path_informers(int path_len, int radius, const RadiusGetter& get_radius) {
-    unique_ptr<PathInfo> pi = make_unique<PathInfo>();
+void SASearchNodeBase<SASearchNode_t>::trace_path_informers(unique_ptr<PathInfo>& pi, int path_len, int radius, const RadiusGetter& get_radius) {
     int min_dist_to_outside_of_shape = radius + 1;
     int path_index = path_len - 1;
     shared_ptr<SASearchNode_t> curr = shared_from_this();
@@ -443,8 +442,6 @@ unique_ptr<PathInfo> SASearchNodeBase<SASearchNode_t>::trace_path_informers(int 
     //trace start node/parent of final re-entry
     relax_admissibility(next_admissible_tile_ids, is_next_merge, adjacent_tile_id);
     trace_node_info(pi, PathNode(curr_lv_pos, path_index), next_admissible_tile_ids);
-
-    return pi;
 }
 
 //get lv_pos and tile_id from SASearchNode

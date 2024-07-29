@@ -267,18 +267,26 @@ struct SANode : public enable_shared_from_this<SANode> {
     uint64_t hash;
 
     //these should update hash
-    void init_lv_pos(Vector2i pos);
-    void init_lv(Vector2i min, Vector2i max, Vector2i agent_pos);
+    void init_lv_pos(Vector2i _lv_pos);
+    void init_lv(Vector2i min, Vector2i max);
     void init_lv_back_ids(Vector2i min, Vector2i max);
-    void set_lv_sid(Vector2i pos, uint16_t new_sid);
-    void set_lv_pos(Vector2i pos);
-    void clear_lv_sid(Vector2i pos);
+    void init_lv_ttid(Vector2i _lv_pos, Vector2i pos);
+    void init_lv_ttid_idempotent(Vector2i _lv_pos, Vector2i pos);
+    void set_lv_sid(Vector2i _lv_pos, uint16_t new_sid);
+    void set_lv_pos(Vector2i _lv_pos);
+    void clear_lv_sid(Vector2i _lv_pos);
     void perform_slide(Vector2i dir, int push_count);
 
     void print_lv() const;
-    uint16_t get_lv_sid(Vector2i pos) const;
+    uint16_t get_lv_sid(Vector2i _lv_pos) const;
     int get_dist_to_lv_edge(Vector2i dir) const;
     int get_slide_push_count(Vector2i dir, bool allow_type_change) const;
+
+    //for iterative widening search
+    void widen_diamond(Vector2i min, Vector2i end, int new_radius, const BoundsChecker& check_bounds);
+    void widen_square(Vector2i min, Vector2i end, int new_radius, const BoundsChecker& check_bounds);
+    template <typename RadiusGetter>
+    void fill_complement(Vector2i min, Vector2i max, int radius, const RadiusGetter& get_radius);
 };
 
 struct SANeighbor {
@@ -319,7 +327,7 @@ struct SASearchNodeBase : public enable_shared_from_this<SASearchNode_t> {
 
     Array trace_path_normalized_actions(int path_len);
     template <typename RadiusGetter>
-    unique_ptr<PathInfo> trace_path_informers(int path_len, int radius, const RadiusGetter& get_radius);
+    void trace_path_informers(unique_ptr<PathInfo>& pi, int path_len, int radius, const RadiusGetter& get_radius);
     int get_virtual_path_index(unique_ptr<PathInfo>& pi, int largest_affected_path_index);
     void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids);
     void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids, bool is_next_merge, uint8_t adjacent_tile_id);
@@ -354,7 +362,7 @@ struct SASearchNodeBaseEquator {
             if (first->sanode->lv_pos == second->sanode->lv_pos && first->sanode->lv == second->sanode->lv) {
                 return true;
             }
-            //UtilityFunctions::print("HASH COLLISION");
+            UtilityFunctions::print("HASH COLLISION");
         }
         return false;
 	}
@@ -372,6 +380,28 @@ struct SASearchNodeBaseComparer {
 		}
 		return first->g < second->g;
 	}
+};
+
+//functors
+struct RadiusGetterDiamond {
+    Vector2i dest_lv_pos;
+
+    RadiusGetterDiamond(Vector2i _dest_lv_pos) : dest_lv_pos(_dest_lv_pos) {}
+    unsigned int operator()(Vector2i curr_lv_pos) const { return manhattan_dist(curr_lv_pos, dest_lv_pos); }
+};
+
+struct RadiusGetterSquare {
+    Vector2i dest_lv_pos;
+
+    RadiusGetterSquare(Vector2i _dest_lv_pos) : dest_lv_pos(_dest_lv_pos) {}
+    unsigned int operator()(Vector2i curr_lv_pos) const { return max(abs(curr_lv_pos.x - dest_lv_pos.x), abs(curr_lv_pos.y - dest_lv_pos.y)); }
+};
+
+struct BoundsChecker {
+    Vector2i min, max;
+
+    BoundsChecker(Vector2i _min, Vector2i _max) : min(_min), max(_max) {}
+    bool operator()(Vector2i pos) const { return pos.x >= min.x && pos.x < max.x && pos.y >= min.y && pos.y < max.y; }
 };
 
 
@@ -412,10 +442,9 @@ public:
     bool is_immediately_trapped(Vector2i pos);
     //iterative widening helper functions
     template <typename RadiusGetter>
-    void path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, int h_reduction, bool trace_informers, int radius, const RadiusGetter& get_radius);
+    void path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, int radius, const RadiusGetter& get_radius);
     template <typename RadiusGetter>
-    shared_ptr<SAPISearchNode> path_informed_hbjpmda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sapi_t& open, closed_sapi_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction);
-    std::function<unsigned int(Vector2i)> get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos);
+    void path_informed_hbjpmda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, int radius, const RadiusGetter& get_radius);
     int get_h_reduction(int radius);
 
     //move back to global scope once testing is done
@@ -527,6 +556,7 @@ int manhattan_dist(Vector2i pos1, Vector2i pos2);
 
 
 //templated implementations
+#include "sanode.tpp"
 #include "sa_search_node.tpp"
 #include "pathfinder.tpp"
 

@@ -407,3 +407,59 @@ min_validated_path_index is redundant bc trace_path_informers() only traces vali
         }
     }
 */
+
+/*std::function
+    std::function<unsigned int(Vector2i)> get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos);
+    std::function<bool(Vector2i)> get_bounds_checker(Vector2i min, Vector2i max);
+*/
+
+/* lambdas deprecated, see functors
+template <typename RadiusGetter>
+RadiusGetter Pathfinder::get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos) {
+    switch (iw_shape_id) {
+        case IWShapeId::DIAMOND:
+            return [dest_lv_pos](Vector2i curr_lv_pos) -> unsigned int { return manhattan_dist(curr_lv_pos, dest_lv_pos); };
+        default:
+            return [dest_lv_pos](Vector2i curr_lv_pos) -> unsigned int { return max(abs(curr_lv_pos.x - dest_lv_pos.x), abs(curr_lv_pos.y - dest_lv_pos.y)); };
+    }
+}
+
+    template <typename RadiusGetter>
+    RadiusGetter get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos);
+
+template <typename RadiusGetter>
+RadiusGetter Pathfinder::get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos) {
+    switch (iw_shape_id) {
+        case IWShapeId::DIAMOND:
+            return RadiusGetterDiamond(dest_lv_pos);
+        case IWShapeId::SQUARE:
+            return RadiusGetterSquare(dest_lv_pos);
+    }
+}
+*/
+
+/*
+struct Radius_getter {
+  Radius_getter(Vector2i dest_lv_pos, unsigned int(*func)(Vector2i dest_lv_pos, Vector2i curr_lv_pos))
+    : dest_lv_pos{dest_lv_pos}
+    , func{func}
+    {}
+  unsigned int operator()(Vector2i curr_lv_pos) {
+    return func(curr_lv_pos, curr_lv_pos);
+  }
+  private:
+  Vector2i dest_lv_pos;
+  unsigned int(*func)(Vector2i dest_lv_pos, Vector2i curr_lv_pos);
+};
+
+Radius_getter get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos) {
+    switch (iw_shape_id) {
+        case IWShapeId::DIAMOND:
+            return {dest_lv_pos, [](Vector2i dest_lv_pos, Vector2i curr_lv_pos) -> unsigned int { ... }};
+    //...
+}
+*/
+
+/*
+shared_ptr<SAPISearchNode> path_informed_hbjpmda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sapi_t& open, closed_sapi_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction);
+*/

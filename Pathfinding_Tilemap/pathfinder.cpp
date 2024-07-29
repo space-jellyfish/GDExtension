@@ -36,26 +36,28 @@ void Pathfinder::_bind_methods() {
 }
 
 //updates hash
-void SANode::init_lv_pos(Vector2i pos) {
-    lv_pos = pos;
-    hash ^= agent_pos_hash_keys[pos.y][pos.x];
+void SANode::init_lv_pos(Vector2i _lv_pos) {
+    lv_pos = _lv_pos;
+    hash ^= agent_pos_hash_keys[lv_pos.y][lv_pos.x];
 }
 
 //updates hash
-//agent_pos is global
+//assume lv_pos is initialized
 //consult agent_type_id if not TRACK_KILLABLE_TYPES
-void SANode::init_lv(Vector2i min, Vector2i max, Vector2i agent_pos)  {
+void SANode::init_lv(Vector2i min, Vector2i max)  {
     int height = max.y - min.y;
     int width = max.x - min.x;
     lv.reserve(height);
-    uint8_t agent_type_id = get_type_id(agent_pos);
+    uint8_t agent_type_id = get_type_id(lv_pos + min);
     int agent_merge_priority = MERGE_PRIORITIES.at(agent_type_id);
 
     for (int y = min.y; y < max.y; ++y) {
+        int lv_y = y - min.y;
         vector<uint16_t> row;
         row.reserve(width);
 
         for (int x = min.x; x < max.x; ++x) {
+            int lv_x = x - min.x;
             Vector2i pos(x, y);
             uint8_t tile_id = get_tile_id(pos);
             uint8_t type_id = get_type_id(pos);
@@ -70,16 +72,17 @@ void SANode::init_lv(Vector2i min, Vector2i max, Vector2i agent_pos)  {
             row.push_back(get_stuff_id(get_back_id(pos), type_id, tile_id));
 
             if (tile_id > TileId::EMPTY) {
-                hash ^= tile_id_hash_keys[y][x][tile_id-1];
+                hash ^= tile_id_hash_keys[lv_y][lv_x][tile_id-1];
             }
             if (type_id < TypeId::REGULAR) {
-                hash ^= type_id_hash_keys[y][x][type_id];
+                hash ^= type_id_hash_keys[lv_y][lv_x][type_id];
             }
         }
         lv.push_back(move(row));
     }
 }
 
+//init type_id to REGULAR, tile_id to EMPTY (no hash update necessary)
 void SANode::init_lv_back_ids(Vector2i min, Vector2i max) {
     int height = max.y - min.y;
     int width = max.x - min.x;
@@ -97,49 +100,70 @@ void SANode::init_lv_back_ids(Vector2i min, Vector2i max) {
     }
 }
 
+//assume type_id REGULAR, tile_id EMPTY (no hash keys have been applied)
+void SANode::init_lv_ttid(Vector2i _lv_pos, Vector2i pos) {
+    uint8_t type_id = get_type_id(pos);
+    uint8_t tile_id = get_tile_id(pos);
+    if (tile_id > TileId::EMPTY) {
+        hash ^= tile_id_hash_keys[_lv_pos.y][_lv_pos.x][tile_id-1];
+    }
+    if (type_id < TypeId::REGULAR) {
+        hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][type_id];
+    }
+    lv[_lv_pos.y][_lv_pos.x] += (type_id << TILE_ID_BITLEN) + tile_id;
+}
+
+//init_lv_ttid() but with check to prevent duplicate hash update
+void SANode::init_lv_ttid_idempotent(Vector2i _lv_pos, Vector2i pos) {
+    if (remove_back_id(get_lv_sid(_lv_pos)) != REGULAR_TYPE_BITS) {
+        return;
+    }
+    init_lv_ttid(_lv_pos, pos);
+}
+
 //updates hash
 //assumes back_id unchanged
-void SANode::set_lv_sid(Vector2i pos, uint16_t new_sid) {
-    uint16_t old_sid = get_lv_sid(pos);
+void SANode::set_lv_sid(Vector2i _lv_pos, uint16_t new_sid) {
+    uint16_t old_sid = get_lv_sid(_lv_pos);
     uint8_t old_tile_id = get_tile_id(old_sid);
     uint8_t new_tile_id = get_tile_id(new_sid);
     uint8_t old_type_id = get_type_id(old_sid);
     uint8_t new_type_id = get_type_id(new_sid);
 
     if (old_type_id < TypeId::REGULAR) {
-        hash ^= type_id_hash_keys[pos.y][pos.x][old_type_id];
+        hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][old_type_id];
     }
     if (new_type_id < TypeId::REGULAR) {
-        hash ^= type_id_hash_keys[pos.y][pos.x][new_type_id];
+        hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][new_type_id];
     }
     if (old_tile_id > TileId::EMPTY) {
-        hash ^= tile_id_hash_keys[pos.y][pos.x][old_tile_id - 1];
+        hash ^= tile_id_hash_keys[_lv_pos.y][_lv_pos.x][old_tile_id - 1];
     }
     if (new_tile_id > TileId::EMPTY) {
-        hash ^= tile_id_hash_keys[pos.y][pos.x][new_tile_id - 1];
+        hash ^= tile_id_hash_keys[_lv_pos.y][_lv_pos.x][new_tile_id - 1];
     }
-    lv[pos.y][pos.x] = new_sid;
+    lv[_lv_pos.y][_lv_pos.x] = new_sid;
 }
 
 //updates hash
-void SANode::set_lv_pos(Vector2i pos) {
+void SANode::set_lv_pos(Vector2i _lv_pos) {
     hash ^= agent_pos_hash_keys[lv_pos.y][lv_pos.x];
-    lv_pos = pos;
+    lv_pos = _lv_pos;
     hash ^= agent_pos_hash_keys[lv_pos.y][lv_pos.x];
 }
 
-//equivalent to set_lv_sid(pos, get_back_bits(get_lv_sid(pos))) but faster
-void SANode::clear_lv_sid(Vector2i pos) {
-    uint16_t stuff_id = get_lv_sid(pos);
+//equivalent to set_lv_sid(_lv_pos, get_back_bits(get_lv_sid(_lv_pos))) but faster
+void SANode::clear_lv_sid(Vector2i _lv_pos) {
+    uint16_t stuff_id = get_lv_sid(_lv_pos);
     uint8_t type_id = get_type_id(stuff_id);
     uint8_t tile_id = get_tile_id(stuff_id);
     if (type_id != TypeId::REGULAR) {
-        hash ^= type_id_hash_keys[pos.y][pos.x][type_id];
+        hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][type_id];
     }
     if (tile_id != TileId::EMPTY) {
-        hash ^= tile_id_hash_keys[pos.y][pos.x][tile_id - 1];
+        hash ^= tile_id_hash_keys[_lv_pos.y][_lv_pos.x][tile_id - 1];
     }
-    lv[pos.y][pos.x] = get_back_bits(stuff_id);
+    lv[_lv_pos.y][_lv_pos.x] = get_back_bits(stuff_id);
 }
 
 //assume slide possible
@@ -180,8 +204,8 @@ void SANode::print_lv() const {
     }
 }
 
-uint16_t SANode::get_lv_sid(Vector2i pos) const {
-    return lv[pos.y][pos.x];
+uint16_t SANode::get_lv_sid(Vector2i _lv_pos) const {
+    return lv[_lv_pos.y][_lv_pos.x];
 }
 
 //lv_edge is furthest valid cell in dir
@@ -249,6 +273,58 @@ int SANode::get_slide_push_count(Vector2i dir, bool allow_type_change) const {
         push_count++;
     }
     return -1;
+}
+
+//don't make duplicate init_lv_ttid() calls
+//assume ttids at new_radius are uninitialized
+//assume check_bounds accepts global_pos
+//assume new_radius > 0
+void SANode::widen_diamond(Vector2i min, Vector2i end, int new_radius, const BoundsChecker& check_bounds) {
+    for (int dx = 0; dx <= new_radius; ++dx) {
+        int dy = new_radius - dx;
+
+        for (int x_sign : {-1, 1}) {
+            for (int y_sign : {-1, 1}) {
+                Vector2i offset(dx * x_sign, dy * y_sign);
+                Vector2i pos = end + offset;
+                if (check_bounds(pos)) {
+                    init_lv_ttid(pos - min, pos);
+                }
+
+                if (!dy) {
+                    break;
+                }
+            }
+            if (!dx) {
+                break;
+            }
+        }
+    }
+}
+
+//don't make duplicate init_lv_ttid() calls
+//assume ttids at new_radius are uninitialized
+//assume check_bounds accepts global_pos
+//assume new_radius > 0
+void SANode::widen_square(Vector2i min, Vector2i end, int new_radius, const BoundsChecker& check_bounds) {
+    for (int y_offset : {-new_radius, new_radius}) {
+        for (int x_offset = -new_radius; x_offset <= new_radius; ++x_offset) {
+            Vector2i offset(x_offset, y_offset);
+            Vector2i pos = end + offset;
+            if (check_bounds(pos)) {
+                init_lv_ttid(pos - min, pos);
+            }
+        }
+    }
+    for (int x_offset : {-new_radius, new_radius}) {
+        for (int y_offset = -new_radius + 1; y_offset < new_radius; ++y_offset) {
+            Vector2i offset(x_offset, y_offset);
+            Vector2i pos = end + offset;
+            if (check_bounds(pos)) {
+                init_lv_ttid(pos - min, pos);
+            }
+        }
+    }
 }
 
 
@@ -327,6 +403,9 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, bool allow_type_chan
     if (!is_compatible(get_type_id(start), get_back_id(end))) {
         return Array();
     }
+
+    //search_size check
+    assert(max.x - min.x <= MAX_SEARCH_WIDTH && max.y - min.y <= MAX_SEARCH_HEIGHT);
 
     //for timing
     auto start_time = chrono::high_resolution_clock::now();
@@ -499,7 +578,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vecto
                 if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
                     continue;
                 }
-                Vector3i normalized_action = Vector3i(dir.x, dir.y, action_id);
+                Vector3i normalized_action(dir.x, dir.y, action_id);
                 shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
 
                 if (!neighbor) {
@@ -870,19 +949,27 @@ Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vect
 
     //don't skip the radius = 0 search (there could be walls)
     int manhattan_dist_to_end = manhattan_dist(start, end);
-    int manhattan_radius = 0;
+    int radius = 0;
     Vector2i lv_end = end - min;
-    std::function<unsigned int(Vector2i)> get_radius = get_radius_getter(IWShapeId::DIAMOND, lv_end);
+    RadiusGetterDiamond get_radius(lv_end);
+    BoundsChecker check_bounds(min, max);
 
-    shared_ptr<SANode> start_sanode = make_shared<SANode>();
-    start_sanode->set_lv_pos(start - min);
-    start_sanode->init_lv_back_ids(min, max);
-    start_sanode->set_lv_sid(start_sanode->lv_pos, get_stuff_id(start));
-    start_sanode->set_lv_sid(lv_end, get_stuff_id(end));
+    shared_ptr<SANode> shape_sanode = make_shared<SANode>();
+    shape_sanode->set_lv_pos(start - min);
+    shape_sanode->init_lv_back_ids(min, max);
+    shape_sanode->set_lv_sid(shape_sanode->lv_pos, get_stuff_id(start));
+    shape_sanode->set_lv_sid(lv_end, get_stuff_id(end));
+    unique_ptr<PathInfo> pi = make_unique<PathInfo>();
 
-    while (manhattan_radius < manhattan_dist_to_end) {
-        
+    while (radius < manhattan_dist_to_end - 1) {
+        path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, radius, get_radius);
+        ++radius;
+        shape_sanode->widen_diamond(min, end, radius, check_bounds);
     }
+    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, radius, get_radius);
+    shape_sanode->fill_complement(min, max, radius, get_radius);
+    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, false, radius, get_radius); //radius is DONT_CARE
+    return pi->normalized_actions;
 }
 
 void Pathfinder::set_player_pos(Vector2i pos) {
@@ -936,15 +1023,6 @@ void Pathfinder::generate_hash_keys() {
 
 bool Pathfinder::is_immediately_trapped(Vector2i pos) {
     return false;
-}
-
-std::function<unsigned int(Vector2i)> Pathfinder::get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos) {
-    switch (iw_shape_id) {
-        case IWShapeId::DIAMOND:
-            return [dest_lv_pos](Vector2i curr_lv_pos) -> unsigned int { return manhattan_dist(curr_lv_pos, dest_lv_pos); };
-        default:
-            return [dest_lv_pos](Vector2i curr_lv_pos) -> unsigned int { return max(abs(curr_lv_pos.x - dest_lv_pos.x), abs(curr_lv_pos.y - dest_lv_pos.y)); };
-    }
 }
 
 //assume node qualifies for h_reduction
