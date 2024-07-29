@@ -534,7 +534,7 @@ void SASearchNodeBase<SASearchNode_t>::relax_admissibility(bitset<TILE_ID_COUNT>
 }
 
 template <typename SASearchNode_t>
-void SASearchNodeBase<SASearchNode_t>::trace_node_info(unique_ptr<PathInfo>& pi, PathNode& pn, bitset<TILE_ID_COUNT>& admissible_tile_ids) {
+void SASearchNodeBase<SASearchNode_t>::trace_node_info(unique_ptr<PathInfo>& pi, const PathNode& pn, const bitset<TILE_ID_COUNT>& admissible_tile_ids) {
     //store path_index
     pi->lp_to_path_indices[pn.lv_pos].insert(pn.index);
 

@@ -187,6 +187,7 @@ struct NextDir {
     bool in_bounds;
     bool blocked; //unused if next_dir == jump_dir
 
+    NextDir() {} //so std::array of NextDir in try_jump() can be initialized
     NextDir(Vector2i _dir, bool _in_bounds, bool _blocked) : dir(_dir), in_bounds(_in_bounds), blocked(_blocked) {}
 };
 
@@ -389,6 +390,7 @@ struct SANeighbor {
     shared_ptr<SANode> sanode;
     unsigned int push_count;
 
+    SANeighbor() {} //so operator[] works
     SANeighbor(unsigned int _unprune_threshold, shared_ptr<SANode> _sanode, unsigned int _push_count)
         : unprune_threshold(_unprune_threshold)
         , sanode(_sanode)
@@ -430,7 +432,7 @@ struct SASearchNodeBase : public enable_shared_from_this<SASearchNodeBase<SASear
     int get_virtual_path_index(unique_ptr<PathInfo>& pi, int largest_affected_path_index);
     void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids);
     void relax_admissibility(bitset<TILE_ID_COUNT>& admissible_tile_ids, bool is_next_merge, uint8_t adjacent_tile_id);
-    void trace_node_info(unique_ptr<PathInfo>& pi, PathNode& pn, bitset<TILE_ID_COUNT>& admissible_tile_ids);
+    void trace_node_info(unique_ptr<PathInfo>& pi, const PathNode& pn, const bitset<TILE_ID_COUNT>& admissible_tile_ids);
 };
 
 struct SASearchNode : public SASearchNodeBase<SASearchNode> {};
