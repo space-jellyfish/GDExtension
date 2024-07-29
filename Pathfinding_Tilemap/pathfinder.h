@@ -20,6 +20,8 @@ using namespace godot;
 //after all asserts are commented out for release, they will be indistinguishable from justified asserts
 //don't use pair/tuple, use structs instead for strong typing (with member initializer lists)
 //ensure no overflow happens when left shifting (<<); see https://en.cppreference.com/w/cpp/language/implicit_conversion#Integral_promotion
+//for map/unordered_map, emplace()/insert() don't do anything if key exists
+//don't emplace()/insert() after find() bc it requires duplicate lookup
 
 //each cell is represented as | BackId (8) | TypeId (3) | TileId (5) |
 //Vector2i max is exclusive
@@ -121,6 +123,35 @@ enum IWShapeId {
     SQUARE,
 };
 
+//collision-free
+//mind the undefined behavior
+struct Vector2iHasher {
+    uint64_t operator() (const Vector2i& v) const {
+        //uint64_t hash_x = hash<int32_t>{}(v.x);
+        //uint64_t hash_y = hash<int32_t>{}(v.y);
+        //return hash_x ^ (hash_y + 0x9e3779b9 + (hash_x << 6) + (hash_x >> 2));
+        //return (v.x << 32) + v.y; //undefined
+        uint64_t ans = v.y;
+        assert(sizeof(v.x) == 4);
+        memcpy(&ans, &v.x, sizeof(v.x));
+        return ans;
+    }
+};
+
+//collision-free
+struct DirHasher {
+    uint64_t operator() (const Vector2i& dir) const {
+        return (3 * dir.x + dir.y + 3) >> 1;
+    }
+};
+
+//collision-free
+struct ActionHasher {
+    uint64_t operator() (const Vector3i& action) const {
+        return ((3 * action.x + action.y + 3) >> 1) + (action.z << 2);
+    }
+};
+
 const unordered_set<uint8_t> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
 const unordered_set<uint8_t> B_SAVE_OR_GOAL = {BackId::SAVEPOINT, BackId::GOAL};
 const unordered_set<uint8_t> T_ENEMY = {TypeId::INVINCIBLE, TypeId::HOSTILE, TypeId::VOID};
@@ -150,35 +181,6 @@ const uint16_t TYPE_AND_TILE_ID_MASK = TYPE_ID_MASK + TILE_ID_MASK;
 const uint16_t REGULAR_TYPE_BITS = TypeId::REGULAR << TILE_ID_BITLEN;
 const bool TRACK_ZEROS = false;
 const bool TRACK_KILLABLE_TYPES = false;
-
-//collision-free
-//mind the undefined behavior
-struct Vector2iHasher {
-    uint64_t operator() (const Vector2i& v) const {
-        //uint64_t hash_x = hash<int32_t>{}(v.x);
-        //uint64_t hash_y = hash<int32_t>{}(v.y);
-        //return hash_x ^ (hash_y + 0x9e3779b9 + (hash_x << 6) + (hash_x >> 2));
-        //return (v.x << 32) + v.y; //undefined
-        uint64_t ans = v.y;
-        assert(sizeof(v.x) == 4);
-        memcpy(&ans, &v.x, sizeof(v.x));
-        return ans;
-    }
-};
-
-//collision-free
-struct DirHasher {
-    uint64_t operator() (const Vector2i& dir) const {
-        return (3 * dir.x + dir.y + 3) >> 1;
-    }
-};
-
-//collision-free
-struct ActionHasher {
-    uint64_t operator() (const Vector3i& action) const {
-        return ((3 * action.x + action.y + 3) >> 1) + (action.z << 2);
-    }
-};
 
 struct NextDir {
     Vector2i dir;
@@ -211,7 +213,7 @@ struct PathNodeEquator {
 
 //for informing h_reductions in iterative widening searches
 struct PathInfo {
-    unordered_map<Vector2i, std::set<int>> lp_to_path_indices; //lv_pos, indices in path
+    unordered_map<Vector2i, std::set<int>, Vector2iHasher> lp_to_path_indices; //lv_pos, indices in path
     //use bitset bc array<bool> doesn't support bit operation, and uint32_t doesn't support []operator
     //for get_virtual_path_index(), bitset[TileId::EMPTY] should be equal to bitset[TileId::ZERO]
     unordered_map<PathNode, bitset<TILE_ID_COUNT>, PathNodeHasher, PathNodeEquator> pn_to_admissible_tile_ids;
@@ -259,6 +261,99 @@ struct CADNodeEquator {
     }
 };
 
+//inline is unnecessary, see StackOverflow/1759300
+template <typename T> int sgn(T val) {
+    return (T(0) < val) - (val < T(0));
+}
+
+uint16_t get_stuff_id(uint8_t back_id, uint8_t type_id, uint8_t tile_id);
+uint16_t get_type_bits(uint16_t stuff_id);
+uint16_t get_back_bits(uint16_t stuff_id);
+uint8_t get_tile_id(uint16_t stuff_id);
+uint8_t get_type_id(uint16_t stuff_id);
+uint8_t get_back_id(uint16_t stuff_id);
+uint16_t get_stuff_id(Vector2i pos);
+uint8_t get_tile_id(Vector2i pos);
+uint8_t get_type_id(Vector2i pos);
+uint8_t get_back_id(Vector2i pos);
+uint16_t remove_tile_id(uint16_t stuff_id);
+uint16_t regular_type_id(uint16_t stuff_id);
+uint16_t remove_back_id(uint16_t stuff_id);
+bool is_compatible(uint8_t type_id, uint8_t back_id);
+bool is_ids_mergeable(uint8_t tile_id1, uint8_t tile_id2);
+bool is_ids_split_mergeable(uint8_t src_tile_id, uint8_t dest_tile_id);
+bool is_same_sign_merge(uint8_t tile_id1, uint8_t tile_id2);
+bool is_tile_unsigned(uint8_t tile_id);
+bool is_tile_unsigned_and_regular(uint16_t stuff_id);
+bool is_tile_empty_and_regular(uint16_t stuff_id);
+bool is_pow_signs_mergeable(Vector2i ps1, Vector2i ps2);
+bool is_pow_splittable(int pow);
+bool is_eff_merge(uint8_t tile_id1, uint8_t tile_id2);
+bool is_type_preserved(uint8_t src_type_id, uint8_t dest_type_id);
+bool is_type_dominant(uint8_t src_type_id, uint8_t dest_type_id);
+Vector2i tid_to_ps(uint8_t tile_id);
+uint8_t ps_to_tid(Vector2i ps);
+int get_tile_pow(uint8_t tile_id);
+int get_signed_tile_pow(uint8_t tile_id);
+int get_tile_sign(uint8_t tile_id);
+int get_true_tile_sign(uint8_t tile_id);
+int get_action_dist(Vector3i action);
+uint8_t get_opposite_tile_id(uint8_t tile_id);
+Vector2i get_splitted_ps(Vector2i ps);
+uint8_t get_splitted_tid(uint8_t tile_id);
+
+//these assume merge is possible
+uint16_t get_merged_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
+uint16_t get_jumped_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
+uint8_t get_merged_tile_id(uint8_t tile_id1, uint8_t tile_id2);
+Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2);
+
+Vector2i get_normalized_dir(Vector3i action);
+Vector3i get_normalized_action(Vector3i action);
+
+
+//heuristics (only cells in lv allowed for rrd)
+//sharable across multiple pathfind()s with different min, max (all positions are global)
+//if rrd finds that goal_pos is enclosed, return numeric_limits<int>::max() so pathfinder can exit early
+//inconsistent abstract distance
+//propagate h-cost using separation between tile_ids
+void rrd_init_iad(Vector2i goal_pos);
+int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id);
+int get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id);
+int get_tile_id_sep(uint8_t tile_id1, uint8_t tile_id2);
+//consistent abstract distance
+//DEPRECATED, see Pictures/greedy_is_not_optimal_when_parsing_sequence
+//see extra.h for the idea
+void rrd_init_cad(Vector2i goal_pos);
+int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos);
+int trace_cad(shared_ptr<CADNode> n);
+bool is_perp(Vector2i first, Vector2i second);
+int get_cad_push_count();
+int manhattan_dist(Vector2i pos1, Vector2i pos2);
+
+
+//functors
+struct RadiusGetterDiamond {
+    Vector2i dest_lv_pos;
+
+    RadiusGetterDiamond(Vector2i _dest_lv_pos) : dest_lv_pos(_dest_lv_pos) {}
+    unsigned int operator()(Vector2i curr_lv_pos) const { return manhattan_dist(curr_lv_pos, dest_lv_pos); }
+};
+
+struct RadiusGetterSquare {
+    Vector2i dest_lv_pos;
+
+    RadiusGetterSquare(Vector2i _dest_lv_pos) : dest_lv_pos(_dest_lv_pos) {}
+    unsigned int operator()(Vector2i curr_lv_pos) const { return max(abs(curr_lv_pos.x - dest_lv_pos.x), abs(curr_lv_pos.y - dest_lv_pos.y)); }
+};
+
+struct BoundsChecker {
+    Vector2i min, max;
+
+    BoundsChecker(Vector2i _min, Vector2i _max) : min(_min), max(_max) {}
+    bool operator()(Vector2i pos) const { return pos.x >= min.x && pos.x < max.x && pos.y >= min.y && pos.y < max.y; }
+};
+
 //shared bc multiple SASearchNodes could use same SANode
 struct SANode : public enable_shared_from_this<SANode> {
     Vector2i lv_pos;
@@ -294,12 +389,16 @@ struct SANeighbor {
     shared_ptr<SANode> sanode;
     unsigned int push_count;
 
-    SANeighbor(unsigned int _unprune_threshold, shared_ptr<SANode> _sanode, unsigned int _push_count) : unprune_threshold(_unprune_threshold), sanode(_sanode), push_count(_push_count) {}
+    SANeighbor(unsigned int _unprune_threshold, shared_ptr<SANode> _sanode, unsigned int _push_count)
+        : unprune_threshold(_unprune_threshold)
+        , sanode(_sanode)
+        , push_count(_push_count)
+        {}
 };
 
 //shared bc multiple children have prev pointer
 template <typename SASearchNode_t>
-struct SASearchNodeBase : public enable_shared_from_this<SASearchNode_t> {
+struct SASearchNodeBase : public enable_shared_from_this<SASearchNodeBase<SASearchNode_t>> {
     shared_ptr<SANode> sanode;
     int g=0, h=0, f=0; //use f for dijkstra
     //for backtracing
@@ -348,14 +447,14 @@ struct SAPISearchNode : public SASearchNodeBase<SAPISearchNode> {
 
 template <typename SASearchNode_t>
 struct SASearchNodeBaseHashGetter  {
-    uint64_t operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>& n) const {
+    uint64_t operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>>& n) const {
         return n->sanode->hash;
     }
 };
 
 template <typename SASearchNode_t>
 struct SASearchNodeBaseEquator {
-	bool operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>& first, const shared_ptr<SASearchNodeBase<SASearchNode_t>& second) const {
+	bool operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>>& first, const shared_ptr<SASearchNodeBase<SASearchNode_t>>& second) const {
 		//return (first->lv_pos == second->lv_pos && first->lv == second->lv);
         //return first->hash == second->hash && first->lv_pos == second->lv_pos && first->lv == second->lv;
         if  (first->sanode->hash == second->sanode->hash) {
@@ -371,7 +470,7 @@ struct SASearchNodeBaseEquator {
 //if f tied, use g; higher g indicates higher confidence
 template <typename SASearchNode_t>
 struct SASearchNodeBaseComparer {
-	bool operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>& first, const shared_ptr<SASearchNodeBase<SASearchNode_t>& second) {
+	bool operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>>& first, const shared_ptr<SASearchNodeBase<SASearchNode_t>>& second) {
 		if (first->f > second->f) {
 			return true;
 		}
@@ -380,28 +479,6 @@ struct SASearchNodeBaseComparer {
 		}
 		return first->g < second->g;
 	}
-};
-
-//functors
-struct RadiusGetterDiamond {
-    Vector2i dest_lv_pos;
-
-    RadiusGetterDiamond(Vector2i _dest_lv_pos) : dest_lv_pos(_dest_lv_pos) {}
-    unsigned int operator()(Vector2i curr_lv_pos) const { return manhattan_dist(curr_lv_pos, dest_lv_pos); }
-};
-
-struct RadiusGetterSquare {
-    Vector2i dest_lv_pos;
-
-    RadiusGetterSquare(Vector2i _dest_lv_pos) : dest_lv_pos(_dest_lv_pos) {}
-    unsigned int operator()(Vector2i curr_lv_pos) const { return max(abs(curr_lv_pos.x - dest_lv_pos.x), abs(curr_lv_pos.y - dest_lv_pos.y)); }
-};
-
-struct BoundsChecker {
-    Vector2i min, max;
-
-    BoundsChecker(Vector2i _min, Vector2i _max) : min(_min), max(_max) {}
-    bool operator()(Vector2i pos) const { return pos.x >= min.x && pos.x < max.x && pos.y >= min.y && pos.y < max.y; }
 };
 
 
@@ -483,77 +560,6 @@ extern unordered_map<uint8_t, int> tile_push_limits; //type_id, tpl
 extern unordered_map<Vector2i, RRDIADLists, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, rrd lists
 extern unordered_map<Vector2i, RRDCADLists, Vector2iHasher> consistent_abstract_dists; //goal_pos, rrd lists
 extern array<double, SASearchId::SEARCH_END> sa_cumulative_search_times; //search_id, cumulative time (ms)
-
-//inline is unnecessary, see StackOverflow/1759300
-template <typename T> int sgn(T val) {
-    return (T(0) < val) - (val < T(0));
-}
-
-uint16_t get_stuff_id(uint8_t back_id, uint8_t type_id, uint8_t tile_id);
-uint16_t get_type_bits(uint16_t stuff_id);
-uint16_t get_back_bits(uint16_t stuff_id);
-uint8_t get_tile_id(uint16_t stuff_id);
-uint8_t get_type_id(uint16_t stuff_id);
-uint8_t get_back_id(uint16_t stuff_id);
-uint16_t get_stuff_id(Vector2i pos);
-uint8_t get_tile_id(Vector2i pos);
-uint8_t get_type_id(Vector2i pos);
-uint8_t get_back_id(Vector2i pos);
-uint16_t remove_tile_id(uint16_t stuff_id);
-uint16_t regular_type_id(uint16_t stuff_id);
-uint16_t remove_back_id(uint16_t stuff_id);
-bool is_compatible(uint8_t type_id, uint8_t back_id);
-bool is_ids_mergeable(uint8_t tile_id1, uint8_t tile_id2);
-bool is_ids_split_mergeable(uint8_t src_tile_id, uint8_t dest_tile_id);
-bool is_same_sign_merge(uint8_t tile_id1, uint8_t tile_id2);
-bool is_tile_unsigned(uint8_t tile_id);
-bool is_tile_unsigned_and_regular(uint16_t stuff_id);
-bool is_tile_empty_and_regular(uint16_t stuff_id);
-bool is_pow_signs_mergeable(Vector2i ps1, Vector2i ps2);
-bool is_pow_splittable(int pow);
-bool is_eff_merge(uint8_t tile_id1, uint8_t tile_id2);
-bool is_type_preserved(uint8_t src_type_id, uint8_t dest_type_id);
-bool is_type_dominant(uint8_t src_type_id, uint8_t dest_type_id);
-Vector2i tid_to_ps(uint8_t tile_id);
-uint8_t ps_to_tid(Vector2i ps);
-int get_tile_pow(uint8_t tile_id);
-int get_signed_tile_pow(uint8_t tile_id);
-int get_tile_sign(uint8_t tile_id);
-int get_true_tile_sign(uint8_t tile_id);
-int get_action_dist(Vector3i action);
-uint8_t get_opposite_tile_id(uint8_t tile_id);
-Vector2i get_splitted_ps(Vector2i ps);
-uint8_t get_splitted_tid(uint8_t tile_id);
-
-//these assume merge is possible
-uint16_t get_merged_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
-uint16_t get_jumped_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id);
-uint8_t get_merged_tile_id(uint8_t tile_id1, uint8_t tile_id2);
-Vector2i get_merged_pow_sign(Vector2i ps1, Vector2i ps2);
-
-Vector2i get_normalized_dir(Vector3i action);
-Vector3i get_normalized_action(Vector3i action);
-
-
-//heuristics (only cells in lv allowed for rrd)
-//sharable across multiple pathfind()s with different min, max (all positions are global)
-//if rrd finds that goal_pos is enclosed, return numeric_limits<int>::max() so pathfinder can exit early
-//inconsistent abstract distance
-//propagate h-cost using separation between tile_ids
-void rrd_init_iad(Vector2i goal_pos);
-int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id);
-int get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id);
-int get_tile_id_sep(uint8_t tile_id1, uint8_t tile_id2);
-//consistent abstract distance
-//DEPRECATED, see Pictures/greedy_is_not_optimal_when_parsing_sequence
-//see extra.h for the idea
-void rrd_init_cad(Vector2i goal_pos);
-int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos);
-int trace_cad(shared_ptr<CADNode> n);
-bool is_perp(Vector2i first, Vector2i second);
-int get_cad_push_count();
-int manhattan_dist(Vector2i pos1, Vector2i pos2);
-
 
 //templated implementations
 #include "sanode.tpp"

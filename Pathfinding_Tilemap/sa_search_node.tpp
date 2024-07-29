@@ -22,7 +22,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_slide(Vector2i 
     if (push_count != -1) {
         shared_ptr<SASearchNode_t> m = make_shared<SASearchNode_t>();
         m->sanode = make_shared<SANode>(*sanode);
-        m->prev = shared_from_this();
+        m->prev = static_pointer_cast<SASearchNode_t>(this->shared_from_this());
         m->prev_push_count = push_count;
         m->prune_backtrack(dir);
         m->sanode->perform_slide(dir, push_count);
@@ -81,7 +81,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
             else {
                 ans->prev_action = normalized_action;
             }
-            ans->prev = shared_from_this();
+            ans->prev = static_pointer_cast<SASearchNode_t>(this->shared_from_this());
             ans->prev_push_count = neighbor.push_count;
             return ans;
         }
@@ -134,21 +134,24 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
     //init next_dirs
     uint8_t src_type_id = get_type_id(sanode->get_lv_sid(sanode->lv_pos));
     bool horizontal = (H_DIRS.find(dir) != H_DIRS.end());
-    vector<NextDir> next_dirs;
+    array<NextDir, 3> next_dirs;
+    auto next_dirs_itr = next_dirs.begin();
     Vector2i perp_dir1 = horizontal ? Vector2i(0, 1) : Vector2i(1, 0);
     Vector2i perp_dir2 = horizontal ? Vector2i(0, -1) : Vector2i(-1, 0);
     for (Vector2i next_dir : {perp_dir1, perp_dir2}) {
         if (!sanode->get_dist_to_lv_edge(next_dir)) {
-            next_dirs.emplace_back(next_dir, false, false);
-            continue;
+            *next_dirs_itr = NextDir(next_dir, false, false);
         }
-        uint16_t next_stuff_id = sanode->get_lv_sid(sanode->lv_pos + next_dir);
-        bool blocked = !(is_tile_empty_and_regular(next_stuff_id) && is_compatible(src_type_id, get_back_id(next_stuff_id)));
-        next_dirs.emplace_back(next_dir, true, blocked);
+        else {
+            uint16_t next_stuff_id = sanode->get_lv_sid(sanode->lv_pos + next_dir);
+            bool blocked = !(is_tile_empty_and_regular(next_stuff_id) && is_compatible(src_type_id, get_back_id(next_stuff_id)));
+            *next_dirs_itr = NextDir(next_dir, true, blocked);
+        }
+        ++next_dirs_itr;
     }
     int dist_to_lv_edge = sanode->get_dist_to_lv_edge(dir);
     int curr_dist = 1;
-    next_dirs.emplace_back(dir, curr_dist < dist_to_lv_edge, false);
+    *next_dirs_itr = NextDir(dir, curr_dist < dist_to_lv_edge, false);
     shared_ptr<SASearchNode_t> curr_jp;
 
     while (curr_dist <= dist_to_lv_edge) {
@@ -256,7 +259,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::get_jump_point(shar
 
     //prev stuff
     ans->prev_action = Vector3i(jump_dist * dir.x, jump_dist * dir.y, ActionId::JUMP);
-    ans->prev = shared_from_this();
+    ans->prev = static_pointer_cast<SASearchNode_t>(this->shared_from_this());
     ans->prev_push_count = 0;
 
     //prune stuff
@@ -335,7 +338,7 @@ Array SASearchNodeBase<SASearchNode_t>::trace_path_normalized_actions(int path_l
 	Array ans;
 	ans.resize(path_len);
 	int index = path_len - 1;
-	shared_ptr<SASearchNode_t> curr = shared_from_this();
+	shared_ptr<SASearchNode_t> curr = static_pointer_cast<SASearchNode_t>(this->shared_from_this());
 
 	while (curr->prev != nullptr) {
         Vector3i normalized_prev_action = get_normalized_action(curr->prev_action);
@@ -397,10 +400,10 @@ template <typename RadiusGetter>
 void SASearchNodeBase<SASearchNode_t>::trace_path_informers(unique_ptr<PathInfo>& pi, int path_len, int radius, const RadiusGetter& get_radius) {
     int min_dist_to_outside_of_shape = radius + 1;
     int path_index = path_len - 1;
-    shared_ptr<SASearchNode_t> curr = shared_from_this();
+    shared_ptr<SASearchNode_t> curr = static_pointer_cast<SASearchNode_t>(this->shared_from_this());
     Vector2i curr_lv_pos = curr->sanode->lv_pos;
     bitset<TILE_ID_COUNT> next_admissible_tile_ids;
-    next_admissible_tile_ids.fill(true);
+    next_admissible_tile_ids.set();
     bool is_next_merge = true;
     uint8_t adjacent_tile_id = TileId::EMPTY;
 
