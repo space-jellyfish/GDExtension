@@ -962,12 +962,15 @@ Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vect
     unique_ptr<PathInfo> pi = make_unique<PathInfo>();
 
     while (radius < manhattan_dist_to_end - 1) {
+        UtilityFunctions::print("radius: ", radius);
         path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, radius, get_radius);
         ++radius;
         shape_sanode->widen_diamond(min, end, radius, check_bounds);
     }
+    UtilityFunctions::print("radius: ", radius);
     path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, radius, get_radius);
     shape_sanode->fill_complement(min, max, radius, get_radius);
+    UtilityFunctions::print("radius: ", radius+1);
     path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, false, radius, get_radius); //radius is DONT_CARE
     return pi->normalized_actions;
 }

@@ -24,6 +24,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
     
     while (!open.empty()) {
         shared_ptr<SAPISearchNode> curr = open.top();
+        //UtilityFunctions::print("curr pos: ", curr->sanode->lv_pos);
 
         if (curr->sanode->lv_pos == lv_end) {
             pi->normalized_actions = curr->trace_path_normalized_actions(curr->g);
@@ -85,6 +86,10 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
             }
         }
     }
+    pi->lp_to_path_indices.clear();
+    pi->pn_to_admissible_tile_ids.clear();
+    pi->normalized_actions.clear();
+    UtilityFunctions::print("no path found");
 }
 
 template <typename RadiusGetter>
