@@ -1035,7 +1035,7 @@ bool Pathfinder::is_immediately_trapped(Vector2i pos) {
 
 //assume node qualifies for h_reduction
 int Pathfinder::get_h_reduction(int virtual_path_index, bool sim_anneal) {
-    return H_REDUCTION_BASE + virtual_path_index * H_REDUCTION_VIRTUAL_PATH_INDEX_FACTOR;
+    return H_REDUCTION_BASE + max(virtual_path_index - H_REDUCTION_VIRTUAL_PATH_INDEX_OFFSET, 0) * H_REDUCTION_VIRTUAL_PATH_INDEX_FACTOR;
 }
 
 void Pathfinder::rrd_clear_iad() {
