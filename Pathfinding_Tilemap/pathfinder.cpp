@@ -48,7 +48,8 @@ void SANode::init_lv(Vector2i min, Vector2i max)  {
     int height = max.y - min.y;
     int width = max.x - min.x;
     lv.reserve(height);
-    uint8_t agent_type_id = get_type_id(lv_pos + min);
+    Vector2i agent_pos = min + lv_pos;
+    uint8_t agent_type_id = get_type_id(agent_pos);
     int agent_merge_priority = MERGE_PRIORITIES.at(agent_type_id);
 
     for (int y = min.y; y < max.y; ++y) {
@@ -66,7 +67,7 @@ void SANode::init_lv(Vector2i min, Vector2i max)  {
             if (!TRACK_ZEROS && tile_id == TileId::ZERO) {
                 tile_id = TileId::EMPTY;
             }
-            if (type_id != TypeId::REGULAR && !TRACK_KILLABLE_TYPES && MERGE_PRIORITIES.at(type_id) <= agent_merge_priority) {
+            if (type_id != TypeId::REGULAR && !TRACK_KILLABLE_TYPES && pos != agent_pos && MERGE_PRIORITIES.at(type_id) <= agent_merge_priority) {
                 type_id = TypeId::REGULAR;
             }
             row.push_back(get_stuff_id(get_back_id(pos), type_id, tile_id));
@@ -102,6 +103,7 @@ void SANode::init_lv_back_ids(Vector2i min, Vector2i max) {
 
 //assume type_id REGULAR, tile_id EMPTY (no hash keys have been applied)
 void SANode::init_lv_ttid(Vector2i _lv_pos, Vector2i pos) {
+    assert(remove_back_id(get_lv_sid(_lv_pos)) == REGULAR_TYPE_BITS);
     uint8_t type_id = get_type_id(pos);
     uint8_t tile_id = get_tile_id(pos);
     if (tile_id > TileId::EMPTY) {
@@ -110,7 +112,7 @@ void SANode::init_lv_ttid(Vector2i _lv_pos, Vector2i pos) {
     if (type_id < TypeId::REGULAR) {
         hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][type_id];
     }
-    lv[_lv_pos.y][_lv_pos.x] += (type_id << TILE_ID_BITLEN) + tile_id;
+    lv[_lv_pos.y][_lv_pos.x] += (type_id << TILE_ID_BITLEN) - REGULAR_TYPE_BITS + tile_id;
 }
 
 //init_lv_ttid() but with check to prevent duplicate hash update
@@ -193,11 +195,15 @@ void SANode::perform_slide(Vector2i dir, int push_count) {
 void SANode::print_lv() const {
     for (int y=0; y < lv.size(); ++y) {
         for (int x=0; x < lv[0].size(); ++x) {
+            uint16_t stuff_id = lv[y][x];
+            uint8_t back_id = get_back_id(stuff_id);
+            uint8_t type_id = get_type_id(stuff_id);
+            uint8_t tile_id = get_tile_id(stuff_id);
             if (x != lv[0].size() - 1) {
-                printf("%d, ", lv[y][x]);
+                printf("(%d, %d, %d), ", back_id, type_id, tile_id);
             }
             else {
-                printf("%d", lv[y][x]);
+                printf("(%d, %d, %d)", back_id, type_id, tile_id);
             }
         }
         printf("\n");
@@ -960,17 +966,21 @@ Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vect
     shape_sanode->set_lv_sid(shape_sanode->lv_pos, get_stuff_id(start));
     shape_sanode->set_lv_sid(lv_end, get_stuff_id(end));
     unique_ptr<PathInfo> pi = make_unique<PathInfo>();
+    UtilityFunctions::print("back_id at lv_pos: ", get_back_id(start));
 
     while (radius < manhattan_dist_to_end - 1) {
         UtilityFunctions::print("radius: ", radius);
+        shape_sanode->print_lv();
         path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, radius, get_radius);
         ++radius;
         shape_sanode->widen_diamond(min, end, radius, check_bounds);
     }
     UtilityFunctions::print("radius: ", radius);
+    shape_sanode->print_lv();
     path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, radius, get_radius);
     shape_sanode->fill_complement(min, max, radius, get_radius);
     UtilityFunctions::print("radius: ", radius+1);
+    shape_sanode->print_lv();
     path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, false, radius, get_radius); //radius is DONT_CARE
     return pi->normalized_actions;
 }
@@ -1079,7 +1089,11 @@ uint8_t get_tile_id(Vector2i pos) {
 
 uint8_t get_type_id(Vector2i pos) {
     //TileId::EMPTY is represented by atlas(-1, -1)
-    return max(cells->get_cell_atlas_coords(LayerId::TILE, pos).y, 0);
+    int tile_atlas_y = cells->get_cell_atlas_coords(LayerId::TILE, pos).y;
+    if (tile_atlas_y == -1) {
+        return TypeId::REGULAR;
+    }
+    return tile_atlas_y;
 }
 
 //assume atlas isn't (-1, -1), aka cell has been generated

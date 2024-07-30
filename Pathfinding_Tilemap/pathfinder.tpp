@@ -24,7 +24,6 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
     
     while (!open.empty()) {
         shared_ptr<SAPISearchNode> curr = open.top();
-        //UtilityFunctions::print("curr pos: ", curr->sanode->lv_pos);
 
         if (curr->sanode->lv_pos == lv_end) {
             pi->normalized_actions = curr->trace_path_normalized_actions(curr->g);
@@ -60,6 +59,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
                 //apply h_reduction
                 int virtual_path_index = neighbor->get_virtual_path_index(pi, neighbor->largest_affected_path_index);
                 if (virtual_path_index != -1) {
+                    UtilityFunctions::print("h_reduction at ", neighbor->sanode->lv_pos, ", vpi = ", virtual_path_index);
                     neighbor->h -= H_REDUCTION_BASE;
                     neighbor->virtual_path_index = virtual_path_index;
                 }

@@ -463,7 +463,7 @@ struct SASearchNodeBaseEquator {
             if (first->sanode->lv_pos == second->sanode->lv_pos && first->sanode->lv == second->sanode->lv) {
                 return true;
             }
-            //UtilityFunctions::print("HASH COLLISION");
+            UtilityFunctions::print("HASH COLLISION");
         }
         return false;
 	}
