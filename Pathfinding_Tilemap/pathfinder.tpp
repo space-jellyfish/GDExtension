@@ -11,7 +11,7 @@
 //closed not optimal bc path-informed heuristic not consistent
 //return empty PathInfo containers if no path exists
 template <typename RadiusGetter>
-void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, int radius, const RadiusGetter& get_radius) {
+void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius) {
     open_sapi_t open;
     closed_sapi_t best_dists;
 
@@ -60,7 +60,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
                 int virtual_path_index = neighbor->get_virtual_path_index(pi, neighbor->largest_affected_path_index);
                 if (virtual_path_index != -1) {
                     UtilityFunctions::print("h_reduction at ", neighbor->sanode->lv_pos, ", vpi = ", virtual_path_index);
-                    neighbor->h -= H_REDUCTION_BASE;
+                    neighbor->h -= get_h_reduction(virtual_path_index, sim_anneal);
                     neighbor->virtual_path_index = virtual_path_index;
                 }
                 neighbor->f = neighbor->g + neighbor->h;
@@ -93,7 +93,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
 }
 
 template <typename RadiusGetter>
-void Pathfinder::path_informed_hbjpmda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, int radius, const RadiusGetter& get_radius) {
+void Pathfinder::path_informed_hbjpmda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius) {
 
 }
 

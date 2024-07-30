@@ -936,12 +936,14 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
 //not optimal bc path-informed heuristic is inconsistent
 //allow reduction to negative h? yes
 //use manhattan_dist bc iw + iada would be too inaccurate
-//use h_reduction proportional to pathlen/manhattan_radius_of_shape since larger radius is harder
+
+//apply proportional h_reduction to nodes within same path? ONE
+    //higher h_reduction for nodes with higher virtual_path_index, since they have more validation
+//use base h_reduction proportional to pathlen/manhattan_radius_of_shape since larger radius is harder? TWO
     //NEEDS PROFILING (both speed and suboptimality); this makes path near start more suboptimal than path near goal (might be good?)
-//apply proportional h_reduction to nodes within same path?
-    //higher h_reduction for nodes closer to goal, since they have been validated already
-//for simulated annealing version, choose random h_reduction from an interval
-    //use greater lower bound and smaller range for nodes closer to goal
+//for simulated annealing version, choose random h_reduction from an interval? THREE
+    //use greater lower bound and smaller range for nodes with higher virtual_path_index
+
 //use a reduced h_reduction if upcoming location in path has been affected?
     //NAH, largest_affected_path_index update in path_informed_mda() accounts for pushing that occurs in prev_path
 //for multi-agent version, iwd SANodes are reusable
@@ -968,13 +970,13 @@ Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vect
     unique_ptr<PathInfo> pi = make_unique<PathInfo>();
 
     while (radius < manhattan_dist_to_end - 1) {
-        path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, radius, get_radius);
+        path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, false, radius, get_radius);
         ++radius;
         shape_sanode->widen_diamond(min, end, radius, check_bounds);
     }
-    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, radius, get_radius);
+    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, false, radius, get_radius);
     shape_sanode->fill_complement(min, max, radius, get_radius);
-    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, false, radius, get_radius); //radius is DONT_CARE
+    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, false, false, radius, get_radius); //radius is DONT_CARE
     return pi->normalized_actions;
 }
 
@@ -1032,8 +1034,8 @@ bool Pathfinder::is_immediately_trapped(Vector2i pos) {
 }
 
 //assume node qualifies for h_reduction
-int Pathfinder::get_h_reduction(int radius) {
-
+int Pathfinder::get_h_reduction(int virtual_path_index, bool sim_anneal) {
+    return H_REDUCTION_BASE + virtual_path_index * H_REDUCTION_VIRTUAL_PATH_INDEX_FACTOR;
 }
 
 void Pathfinder::rrd_clear_iad() {

@@ -164,6 +164,7 @@ const int TILE_POW_MAX = 14;
 const int IAD_SEP_FACTOR = 1;
 const int IAD_SIGN_CHANGE_PENALTY = 2;
 const float H_REDUCTION_ITERATION_FACTOR = 1.0;
+const float H_REDUCTION_VIRTUAL_PATH_INDEX_FACTOR = 0.5;
 const int H_REDUCTION_BASE = 2;
 const int MAX_SEARCH_WIDTH = 17;
 const int MAX_SEARCH_HEIGHT = 17;
@@ -521,10 +522,10 @@ public:
     bool is_immediately_trapped(Vector2i pos);
     //iterative widening helper functions
     template <typename RadiusGetter>
-    void path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, int radius, const RadiusGetter& get_radius);
+    void path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius);
     template <typename RadiusGetter>
-    void path_informed_hbjpmda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, int radius, const RadiusGetter& get_radius);
-    int get_h_reduction(int radius);
+    void path_informed_hbjpmda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius);
+    int get_h_reduction(int virtual_path_index, bool sim_anneal);
 
     //move back to global scope once testing is done
     void rrd_clear_iad();
