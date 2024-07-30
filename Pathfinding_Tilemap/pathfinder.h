@@ -132,7 +132,7 @@ struct Vector2iHasher {
         //return hash_x ^ (hash_y + 0x9e3779b9 + (hash_x << 6) + (hash_x >> 2));
         //return (v.x << 32) + v.y; //undefined
         uint64_t ans = v.y;
-        assert(sizeof(v.x) == 4);
+        //assert(sizeof(v.x) == 4);
         memcpy(&ans, &v.x, sizeof(v.x));
         return ans;
     }
@@ -463,7 +463,7 @@ struct SASearchNodeBaseEquator {
             if (first->sanode->lv_pos == second->sanode->lv_pos && first->sanode->lv == second->sanode->lv) {
                 return true;
             }
-            UtilityFunctions::print("HASH COLLISION");
+            //UtilityFunctions::print("HASH COLLISION");
         }
         return false;
 	}

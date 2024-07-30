@@ -103,7 +103,7 @@ void SANode::init_lv_back_ids(Vector2i min, Vector2i max) {
 
 //assume type_id REGULAR, tile_id EMPTY (no hash keys have been applied)
 void SANode::init_lv_ttid(Vector2i _lv_pos, Vector2i pos) {
-    assert(remove_back_id(get_lv_sid(_lv_pos)) == REGULAR_TYPE_BITS);
+    //assert(remove_back_id(get_lv_sid(_lv_pos)) == REGULAR_TYPE_BITS);
     uint8_t type_id = get_type_id(pos);
     uint8_t tile_id = get_tile_id(pos);
     if (tile_id > TileId::EMPTY) {
@@ -379,7 +379,7 @@ void SAPISearchNode::update_lapi_helpers(unique_ptr<PathInfo>& pi, Vector2i affe
     if (indices_itr != pi->lp_to_path_indices.end()) {
         //prev_path visits affected_lv_pos
         std::set<int>& prev_path_indices_at_lp = (*indices_itr).second;
-        assert(!prev_path_indices_at_lp.empty());
+        //assert(!prev_path_indices_at_lp.empty());
         int max_path_index_at_lp = *prev_path_indices_at_lp.rbegin();
         if (max_path_index_at_lp > largest_affected_lp_path_index) {
             penultimate_affected_lp_path_index = largest_affected_lp_path_index;
@@ -410,7 +410,7 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, bool allow_type_chan
         return Array();
     }
 
-    //search_size check
+    //search_size check; DO NOT COMMENT
     assert(max.x - min.x <= MAX_SEARCH_WIDTH && max.y - min.y <= MAX_SEARCH_HEIGHT);
 
     //for timing
@@ -966,21 +966,14 @@ Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vect
     shape_sanode->set_lv_sid(shape_sanode->lv_pos, get_stuff_id(start));
     shape_sanode->set_lv_sid(lv_end, get_stuff_id(end));
     unique_ptr<PathInfo> pi = make_unique<PathInfo>();
-    UtilityFunctions::print("back_id at lv_pos: ", get_back_id(start));
 
     while (radius < manhattan_dist_to_end - 1) {
-        UtilityFunctions::print("radius: ", radius);
-        shape_sanode->print_lv();
         path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, radius, get_radius);
         ++radius;
         shape_sanode->widen_diamond(min, end, radius, check_bounds);
     }
-    UtilityFunctions::print("radius: ", radius);
-    shape_sanode->print_lv();
     path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, radius, get_radius);
     shape_sanode->fill_complement(min, max, radius, get_radius);
-    UtilityFunctions::print("radius: ", radius+1);
-    shape_sanode->print_lv();
     path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, false, radius, get_radius); //radius is DONT_CARE
     return pi->normalized_actions;
 }

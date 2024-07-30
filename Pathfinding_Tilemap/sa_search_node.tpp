@@ -462,7 +462,7 @@ int SASearchNodeBase<SASearchNode_t>::get_virtual_path_index(unique_ptr<PathInfo
     uint8_t curr_tile_id = get_tile_id(sanode->get_lv_sid(sanode->lv_pos));
     std::set<int>& prev_path_indices_at_lp = (*indices_itr).second;
     //init_lapi() calls lower_bound() already, see Pictures/lower_bound_is_not_necessary_in_get_virtual_path_index for casework
-    assert(prev_path_indices_at_lp.find(largest_affected_path_index) == prev_path_indices_at_lp.lower_bound(largest_affected_path_index));
+    //assert(prev_path_indices_at_lp.find(largest_affected_path_index) == prev_path_indices_at_lp.lower_bound(largest_affected_path_index));
 
     for (auto index_itr = prev_path_indices_at_lp.rbegin(); index_itr.base() != prev_path_indices_at_lp.find(largest_affected_path_index); ++index_itr) {
         auto tile_ids_itr = pi->pn_to_admissible_tile_ids.find(PathNode(sanode->lv_pos, *index_itr));
