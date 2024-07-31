@@ -27,7 +27,10 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
 
         if (curr->sanode->lv_pos == lv_end) {
             pi->normalized_actions = curr->trace_path_normalized_actions(curr->g);
+            //don't clear previous path informers unless tracing for a new path
             if (trace_informers) {
+                pi->lp_to_path_indices.clear();
+                pi->pn_to_admissible_tile_ids.clear();
                 curr->trace_path_informers(pi, curr->g, radius, get_radius);
             }
             return;
@@ -86,8 +89,6 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
             }
         }
     }
-    pi->lp_to_path_indices.clear();
-    pi->pn_to_admissible_tile_ids.clear();
     pi->normalized_actions.clear();
     UtilityFunctions::print("no path found");
 }
