@@ -463,3 +463,10 @@ Radius_getter get_radius_getter(int iw_shape_id, Vector2i dest_lv_pos) {
 /*
 shared_ptr<SAPISearchNode> path_informed_hbjpmda(int max_depth, bool allow_type_change, Vector2i lv_end, open_sapi_t& open, closed_sapi_t& best_dists, unique_ptr<PathInfo>& pi, int h_reduction);
 */
+
+/* from pathfind_sa_iwdmda(); moved to pathfind_sa()
+    //early exit to skip SANode construction
+    if (start == end) {
+        return Array();
+    }
+*/

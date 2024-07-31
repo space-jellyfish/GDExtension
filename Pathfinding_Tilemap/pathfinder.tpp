@@ -45,7 +45,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
         }
 
         for (Vector2i dir : DIRECTIONS) {
-            if (!curr->sanode->get_dist_to_lv_edge(dir)) {
+            if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {

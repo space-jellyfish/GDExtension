@@ -124,8 +124,8 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
 //when generating from jp, generate split in all dirs, generate slide iff next tile isn't empty_and_regular
 template <typename SASearchNode_t>
 shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change) {
-    //check bounds NAH
-    //check empty
+    //check bounds NAH, pathfind_sa*() checks while generating
+    //check obstruction
     Vector2i curr_pos = sanode->lv_pos + dir;
     if (!is_tile_empty_and_regular(sanode->get_lv_sid(curr_pos))) {
         return nullptr;
@@ -139,7 +139,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
     Vector2i perp_dir1 = horizontal ? Vector2i(0, 1) : Vector2i(1, 0);
     Vector2i perp_dir2 = horizontal ? Vector2i(0, -1) : Vector2i(-1, 0);
     for (Vector2i next_dir : {perp_dir1, perp_dir2}) {
-        if (!sanode->get_dist_to_lv_edge(next_dir)) {
+        if (!sanode->get_dist_to_lv_edge(curr_pos, next_dir)) {
             *next_dirs_itr = NextDir(next_dir, false, false);
         }
         else {
@@ -149,7 +149,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
         }
         ++next_dirs_itr;
     }
-    int dist_to_lv_edge = sanode->get_dist_to_lv_edge(dir);
+    int dist_to_lv_edge = sanode->get_dist_to_lv_edge(sanode->lv_pos, dir);
     int curr_dist = 1;
     *next_dirs_itr = NextDir(dir, curr_dist < dist_to_lv_edge, false);
     shared_ptr<SASearchNode_t> curr_jp;

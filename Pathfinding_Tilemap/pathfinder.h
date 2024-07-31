@@ -264,6 +264,27 @@ struct CADNodeEquator {
     }
 };
 
+//for is_goal_enclosed()
+struct EnclosureNode {
+    Vector2i lv_pos;
+    int g=0, h=0, f=0;
+
+    EnclosureNode(Vector2i _lv_pos) : lv_pos(_lv_pos) {}
+    EnclosureNode jump(Vector2i dir, Vector2i lv_end, shared_ptr<SANode> env, uint8_t agent_type_id);
+};
+
+struct EnclosureNodeComparer {
+    bool operator() (const EnclosureNode& first, const EnclosureNode& second) const {
+        if (first.f > second.f) {
+            return true;
+        }
+        if (first.f < second.f) {
+            return false;
+        }
+        return first.g < second.g;
+    }
+};
+
 //inline is unnecessary, see StackOverflow/1759300
 template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
@@ -377,7 +398,7 @@ struct SANode : public enable_shared_from_this<SANode> {
 
     void print_lv() const;
     uint16_t get_lv_sid(Vector2i _lv_pos) const;
-    int get_dist_to_lv_edge(Vector2i dir) const;
+    int get_dist_to_lv_edge(Vector2i _lv_pos, Vector2i dir) const;
     int get_slide_push_count(Vector2i dir, bool allow_type_change) const;
 
     //for iterative widening search
@@ -521,6 +542,7 @@ public:
     void generate_hash_keys();
 
     bool is_immediately_trapped(Vector2i pos);
+    bool is_goal_enclosed(shared_ptr<SANode> env, Vector2i lv_end);
     //iterative widening helper functions
     template <typename RadiusGetter>
     void path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius);
