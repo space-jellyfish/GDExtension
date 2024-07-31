@@ -470,3 +470,14 @@ shared_ptr<SAPISearchNode> path_informed_hbjpmda(int max_depth, bool allow_type_
         return Array();
     }
 */
+
+/* try_jump() update in_bounds
+*/
+
+/* try_jump() check obstruction
+uint16_t curr_stuff_id = sanode->get_lv_sid(curr_pos);
+
+//check obstruction
+if (!is_tile_empty_and_regular(curr_stuff_id) || !is_compatible(src_type_id, get_back_id(curr_stuff_id))) {
+    return nullptr;
+}*/

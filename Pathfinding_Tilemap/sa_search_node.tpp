@@ -126,13 +126,15 @@ template <typename SASearchNode_t>
 shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change) {
     //check bounds NAH, pathfind_sa*() checks while generating
     //check obstruction
+    uint8_t src_type_id = get_type_id(sanode->get_lv_sid(sanode->lv_pos));
     Vector2i curr_pos = sanode->lv_pos + dir;
-    if (!is_tile_empty_and_regular(sanode->get_lv_sid(curr_pos))) {
+    uint16_t curr_stuff_id = sanode->get_lv_sid(curr_pos);
+    if (!is_tile_empty_and_regular(curr_stuff_id) || !is_compatible(src_type_id, get_back_id(curr_stuff_id))) {
         return nullptr;
     }
+    bool next_obstructed = false;
 
     //init next_dirs
-    uint8_t src_type_id = get_type_id(sanode->get_lv_sid(sanode->lv_pos));
     bool horizontal = (H_DIRS.find(dir) != H_DIRS.end());
     array<NextDir, 3> next_dirs;
     auto next_dirs_itr = next_dirs.begin();
@@ -155,13 +157,6 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
     shared_ptr<SASearchNode_t> curr_jp;
 
     while (curr_dist <= dist_to_lv_edge) {
-        uint16_t curr_stuff_id = sanode->get_lv_sid(curr_pos);
-
-        //check obstruction
-        if (!is_tile_empty_and_regular(curr_stuff_id) || !is_compatible(src_type_id, get_back_id(curr_stuff_id))) {
-            return nullptr;
-        }
-
         //get current jump point; reuse sanode if possible
         shared_ptr<SANode> prev_sanode = (curr_dist > 1) ? curr_jp->sanode : nullptr;
         curr_jp = get_jump_point(prev_sanode, dir, curr_pos, curr_dist);
@@ -178,20 +173,25 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
                 //curr_jp->prune_invalid_action_ids(next_dir.dir); //redundant, pathfind_sa_*() does bounds check
                 continue;
             }
+            //update in_bounds?
+            //if next_dir.dir != dir, no bc in_bounds cannot change
+            //if next_dir.dir == dir, yes bc while loop only ensures curr_pos is in_bounds
 
-            //update in_bounds
+            uint16_t next_stuff_id = sanode->get_lv_sid(curr_pos + next_dir.dir);
+            bool next_compatible = is_compatible(src_type_id, get_back_id(next_stuff_id));
+            bool next_empty_and_regular = is_tile_empty_and_regular(next_stuff_id);
+            //update next_obstructed; this can be safely skipped if !next_dir.in_bounds since if next_dir.dir == dir, while loop will exit
+            //also update in_bounds since it uses the same if expression
             if (next_dir.dir == dir) {
+                next_obstructed = !next_empty_and_regular || !next_compatible;
                 next_dir.in_bounds = curr_dist + 1 < dist_to_lv_edge;
             }
 
             //compatibility check
-            uint16_t next_stuff_id = sanode->get_lv_sid(curr_pos + next_dir.dir);
-            bool next_compatible = is_compatible(src_type_id, get_back_id(next_stuff_id));
-            bool next_empty_and_regular = is_tile_empty_and_regular(next_stuff_id);
             if (!next_compatible) {
                 curr_jp->prune_invalid_action_ids(next_dir.dir);
                 //update blocked
-                next_dir.blocked = !(next_empty_and_regular && next_compatible);
+                next_dir.blocked = !next_empty_and_regular;
                 continue;
             }
 
@@ -239,6 +239,10 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
             next_dir.blocked = !(next_empty_and_regular && next_compatible);
         }
 
+        //check obstruction
+        if (next_obstructed) {
+            return nullptr;
+        }
         curr_pos += dir;
         ++curr_dist;
     }
