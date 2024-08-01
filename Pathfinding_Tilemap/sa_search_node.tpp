@@ -155,6 +155,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
     int curr_dist = 1;
     *next_dirs_itr = NextDir(dir, curr_dist < dist_to_lv_edge, false);
     shared_ptr<SASearchNode_t> curr_jp;
+    shared_ptr<SASearchNode_t> ans;
 
     while (curr_dist <= dist_to_lv_edge) {
         //get current jump point; reuse sanode if possible
@@ -180,9 +181,9 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
             uint16_t next_stuff_id = sanode->get_lv_sid(curr_pos + next_dir.dir);
             bool next_compatible = is_compatible(src_type_id, get_back_id(next_stuff_id));
             bool next_empty_and_regular = is_tile_empty_and_regular(next_stuff_id);
-            //update next_obstructed; this can be safely skipped if !next_dir.in_bounds since if next_dir.dir == dir, while loop will exit
-            //also update in_bounds since it uses the same if expression
-            if (next_dir.dir == dir) {
+            //update next_obstructed; this can be safely skipped if while loop will exit (ans || (!next_dir.in_bounds && next_dir.dir == dir))
+            //update in_bounds since it uses the same if expression
+            if (!ans && next_dir.dir == dir) {
                 next_obstructed = !next_empty_and_regular || !next_compatible;
                 next_dir.in_bounds = curr_dist + 1 < dist_to_lv_edge;
             }
@@ -195,27 +196,31 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
                 continue;
             }
 
-            //next empty check
-            if (next_dir.dir == dir && next_empty_and_regular) {
-                continue;
-            }
-
-            //prune jump if horizontal, perp, and not blocked
-            if (horizontal && next_dir.dir != dir && !next_dir.blocked) {
-                curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP)] = {1, nullptr, 0};
-            }
-
-            //prune slide if empty, prune jump if not
             if (next_empty_and_regular) {
+                //next empty check
+                if (next_dir.dir == dir) {
+                    continue;
+                }
+
+                //prune slide if empty (to skip upcoming try_action(), not redundant)
                 curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::SLIDE)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+
+                if (horizontal && next_dir.dir != dir) {
+                    //horizontal forced neighbor check
+                    if (next_dir.blocked) {
+                        ans = curr_jp;
+                        continue;
+                    }
+                    else {
+                        //prune jump if horizontal, perp, and not blocked
+                        //unprune_threshold should be 1, see Pictures/jps_nonnatural_nonforced_unprune_threshold_should_be_one
+                        curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP)] = {1, nullptr, 0};
+                    }
+                }
             }
             else {
+                //prune jump if not
                 curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
-            }
-
-            //horizontal perp empty check
-            if (horizontal && next_dir.dir != dir && next_empty_and_regular && next_dir.blocked) {
-                return curr_jp;
             }
 
             for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
@@ -229,14 +234,24 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
                 //this does not create any permanent refs to curr_jp->sanode, so it can be reused for the next curr_jp
                 shared_ptr<SASearchNode_t> neighbor = curr_jp->try_action(normalized_next_action, lv_end, allow_type_change);
                 if (neighbor) {
-                    if (!horizontal || next_dir.dir == dir || action_id != ActionId::SLIDE || next_dir.blocked || neighbor->prev_push_count) {
-                        return curr_jp;
+                    if (!horizontal || next_dir.dir == dir || next_dir.blocked || action_id != ActionId::SLIDE || neighbor->prev_push_count) {
+                        ans = curr_jp;
                     }
+                    else {
+                        curr_jp->neighbors[normalized_next_action] = {1, nullptr, 0};
+                    }
+                }
+                if (ans) {
+                    break;
                 }
             }
 
             //update blocked
             next_dir.blocked = !(next_empty_and_regular && next_compatible);
+        }
+        //check ans
+        if (ans) {
+            return ans;
         }
 
         //check obstruction
@@ -311,9 +326,7 @@ void SASearchNodeBase<SASearchNode_t>::transfer_neighbors(shared_ptr<SASearchNod
     for (auto [normalized_action, neighbor] : neighbors) {
         //transfer if prune is invalid-based
         if (neighbor.unprune_threshold == numeric_limits<unsigned int>::max()) {
-            if (dest_neighbors.find(normalized_action) == dest_neighbors.end()) {
-                dest_neighbors[normalized_action] = {numeric_limits<unsigned int>::max(), nullptr, 0};
-            }
+            dest_neighbors[normalized_action] = {numeric_limits<unsigned int>::max(), nullptr, 0};
             continue;
         }
         

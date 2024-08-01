@@ -471,7 +471,28 @@ shared_ptr<SAPISearchNode> path_informed_hbjpmda(int max_depth, bool allow_type_
     }
 */
 
-/* try_jump() update in_bounds
+/* try_jump() prune non-natural neighbors
+
+            if (ans) {
+                //prune non-natural non-forced neighbor
+                if (horizontal && next_dir.dir != dir && !next_dir.blocked) {
+                    if (next_empty_and_regular) {
+                        ans->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::SLIDE)] = {1, nullptr, 0};
+                        ans->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP)] = {1, nullptr, 0};
+                    }
+                    else {
+                        ans->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP)] = {1, nullptr, 0};
+
+                        Vector3i normalized_next_action = Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::SLIDE);
+                        shared_ptr<SASearchNode_t> neighbor = ans->try_action(normalized_next_action, lv_end, allow_type_change);
+                        if (neighbor && !neighbor->prev_push_count) {
+                            ans->neighbors[normalized_next_action] = {1, nullptr, 0};
+                        }
+                    }
+                }
+                assert(ans == curr_jp);
+                continue;
+            }
 */
 
 /* try_jump() check obstruction
