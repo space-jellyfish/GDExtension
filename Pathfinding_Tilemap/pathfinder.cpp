@@ -36,17 +36,20 @@ void Pathfinder::_bind_methods() {
 }
 
 //if jump fails, return EN with same lv_pos
-EnclosureNode EnclosureNode::jump(Vector2i dir, Vector2i lv_end, shared_ptr<SANode> env, uint8_t agent_type_id) {
-    //check bounds, empty
+//use env->lv_pos as jump goal
+//don't update g/h/f bc heuristic is unknown
+EnclosureNode EnclosureNode::jump(Vector2i dir, shared_ptr<SANode> env, uint8_t agent_type_id) {
+    //check bounds
     int dist_to_lv_edge = env->get_dist_to_lv_edge(lv_pos, dir);
     if (!dist_to_lv_edge) {
         return *this;
     }
+
+    //check obstruction
     Vector2i curr_pos = lv_pos + dir;
     if (!is_compatible(agent_type_id, get_back_id(env->get_lv_sid(curr_pos)))) {
         return *this;
     }
-    int curr_dist = 1;
 
     //init next_dirs
     array<NextDir, 2> next_dirs;
@@ -65,9 +68,29 @@ EnclosureNode EnclosureNode::jump(Vector2i dir, Vector2i lv_end, shared_ptr<SANo
         }
         ++next_dirs_itr;
     }
+    int curr_dist = 1;
 
     while (curr_dist <= dist_to_lv_edge) {
-        
+        EnclosureNode curr_jp(curr_pos);
+
+        if (curr_pos == env->lv_pos) {
+            return curr_jp;
+        }
+
+        for (NextDir& next_dir : next_dirs) {
+            if (!next_dir.in_bounds) {
+                continue;
+            }
+
+            if (horizontal) {
+                if (next_dir.blocked && is_compatible(agent_type_id, get_back_id(env->get_lv_sid(curr_pos + next_dir)))) {
+                    return curr_jp;
+                }
+            }
+            else {
+                if (curr_jp.jump(next_dir, env, ))
+            }
+        }
     }
 }
 

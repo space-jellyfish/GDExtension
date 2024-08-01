@@ -270,7 +270,7 @@ struct EnclosureNode {
     int g=0, h=0, f=0;
 
     EnclosureNode(Vector2i _lv_pos) : lv_pos(_lv_pos) {}
-    EnclosureNode jump(Vector2i dir, Vector2i lv_end, shared_ptr<SANode> env, uint8_t agent_type_id);
+    EnclosureNode jump(Vector2i dir, shared_ptr<SANode> env, uint8_t agent_type_id);
 };
 
 struct EnclosureNodeComparer {
