@@ -12,7 +12,7 @@
 //return empty PathInfo containers if no path exists
 template <typename RadiusGetter>
 void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius) {
-    open_sapi_t open;
+    open_sapi_fsort_t open;
     closed_sapi_t best_dists;
 
     shared_ptr<SAPISearchNode> first = make_shared<SAPISearchNode>();
@@ -50,7 +50,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SAPISearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
+                shared_ptr<SAPISearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
 
                 if (!neighbor) {
                     continue;

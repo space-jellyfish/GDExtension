@@ -38,6 +38,7 @@ void Pathfinder::_bind_methods() {
 //if jump fails, return EN with same lv_pos
 //use env->lv_pos as jump goal
 //don't update g/h/f bc heuristic is unknown
+//prune non-natural neighbors, unless forced
 EnclosureNode EnclosureNode::jump(Vector2i dir, shared_ptr<SANode> env, uint8_t agent_type_id) {
     //check bounds
     int dist_to_lv_edge = env->get_dist_to_lv_edge(lv_pos, dir);
@@ -83,21 +84,28 @@ EnclosureNode EnclosureNode::jump(Vector2i dir, shared_ptr<SANode> env, uint8_t 
             }
 
             if (horizontal) {
-                if (next_dir.blocked && is_compatible(agent_type_id, get_back_id(env->get_lv_sid(curr_pos + next_dir)))) {
+                if (next_dir.blocked && is_compatible(agent_type_id, get_back_id(env->get_lv_sid(curr_pos + next_dir.dir)))) {
                     return curr_jp;
                 }
             }
             else {
-                if (curr_jp.jump(next_dir, env, ))
+                //if (curr_jp.jump(next_dir, env, ))
             }
         }
     }
 }
 
 
-//consider using get_*_bits() and addition instead
-uint16_t get_stuff_id(uint8_t back_id, uint8_t type_id, uint8_t tile_id) {
-    return (back_id << TILE_AND_TYPE_ID_BITLEN) + (type_id << TILE_ID_BITLEN) + tile_id;
+uint16_t make_stuff_id(uint8_t back_id, uint8_t type_id, uint8_t tile_id) {
+    return make_back_bits(back_id) + make_type_bits(type_id) + tile_id;
+}
+
+uint16_t make_back_bits(uint8_t back_id) {
+    return back_id << TILE_AND_TYPE_ID_BITLEN;
+}
+
+uint16_t make_type_bits(uint8_t type_id) {
+    return type_id << TILE_ID_BITLEN;
 }
 
 uint16_t get_type_bits(uint16_t stuff_id) {
@@ -122,7 +130,8 @@ uint8_t get_back_id(uint16_t stuff_id) {
 
 uint16_t get_stuff_id(Vector2i pos) {
     Vector2i tile_atlas_coords = cells->get_cell_atlas_coords(LayerId::TILE, pos);
-    return (get_back_id(pos) << TILE_AND_TYPE_ID_BITLEN) + (max(tile_atlas_coords.y, 0) << TILE_ID_BITLEN) + (tile_atlas_coords.x + 1);
+    uint8_t type_id = (tile_atlas_coords.y == -1) ? TypeId::REGULAR : tile_atlas_coords.y;
+    return make_stuff_id(get_back_id(pos), type_id, tile_atlas_coords.x + 1);
 }
 
 uint8_t get_tile_id(Vector2i pos) {
@@ -133,29 +142,26 @@ uint8_t get_tile_id(Vector2i pos) {
 uint8_t get_type_id(Vector2i pos) {
     //TileId::EMPTY is represented by atlas(-1, -1)
     int tile_atlas_y = cells->get_cell_atlas_coords(LayerId::TILE, pos).y;
-    if (tile_atlas_y == -1) {
-        return TypeId::REGULAR;
-    }
-    return tile_atlas_y;
+    return (tile_atlas_y == -1) ? TypeId::REGULAR : tile_atlas_y;
 }
 
-//assume atlas isn't (-1, -1), aka cell has been generated
+//treat uninitialized cell (atlas is (-1, -1)) as empty
 uint8_t get_back_id(Vector2i pos) {
-    return cells->get_cell_atlas_coords(LayerId::BACK, pos).x;
+    return max(cells->get_cell_atlas_coords(LayerId::BACK, pos).x, 0);
 }
 
 //resulting tile_id is EMPTY
-uint16_t remove_tile_id(uint16_t stuff_id) {
+uint16_t reset_tile_id(uint16_t stuff_id) {
     return stuff_id & BACK_AND_TYPE_ID_MASK;
 }
 
 //resulting type_id is REGULAR
-uint16_t regular_type_id(uint16_t stuff_id) {
+uint16_t reset_type_id(uint16_t stuff_id) {
     return stuff_id & BACK_AND_TILE_ID_MASK + REGULAR_TYPE_BITS;
 }
 
 //resulting back_id is EMPTY
-uint16_t remove_back_id(uint16_t stuff_id) {
+uint16_t reset_back_id(uint16_t stuff_id) {
     return stuff_id & TYPE_AND_TILE_ID_MASK;
 }
 
@@ -310,12 +316,12 @@ uint16_t get_merged_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id) {
         type_id = TypeId::REGULAR;
     }
 
-    return back_bits + (type_id << TILE_ID_BITLEN) + tile_id;
+    return back_bits + make_type_bits(type_id) + tile_id;
 }
 
 //get_merged_stuff_id but assuming dest is empty_and_regular
 uint16_t get_jumped_stuff_id(uint16_t src_stuff_id, uint16_t dest_stuff_id) {
-    return get_back_bits(dest_stuff_id) + remove_back_id(src_stuff_id);
+    return get_back_bits(dest_stuff_id) + reset_back_id(src_stuff_id);
 }
 
 //assumes merge possible
@@ -611,7 +617,7 @@ void SANode::init_lv(Vector2i min, Vector2i max)  {
             if (type_id != TypeId::REGULAR && !TRACK_KILLABLE_TYPES && pos != agent_pos && MERGE_PRIORITIES.at(type_id) <= agent_merge_priority) {
                 type_id = TypeId::REGULAR;
             }
-            row.push_back(get_stuff_id(get_back_id(pos), type_id, tile_id));
+            row.push_back(make_stuff_id(get_back_id(pos), type_id, tile_id));
 
             if (tile_id > TileId::EMPTY) {
                 hash ^= tile_id_hash_keys[lv_y][lv_x][tile_id-1];
@@ -636,7 +642,7 @@ void SANode::init_lv_back_ids(Vector2i min, Vector2i max) {
         row.reserve(width);
 
         for (int x = min.x; x < max.x; ++x) {
-            row.push_back((get_back_id(Vector2i(x, y)) << TILE_AND_TYPE_ID_BITLEN) + REGULAR_TYPE_BITS);
+            row.push_back(make_back_bits(get_back_id(Vector2i(x, y))) + REGULAR_TYPE_BITS);
         }
         lv.push_back(move(row));
     }
@@ -644,7 +650,7 @@ void SANode::init_lv_back_ids(Vector2i min, Vector2i max) {
 
 //assume type_id REGULAR, tile_id EMPTY (no hash keys have been applied)
 void SANode::init_lv_ttid(Vector2i _lv_pos, Vector2i pos) {
-    //assert(remove_back_id(get_lv_sid(_lv_pos)) == REGULAR_TYPE_BITS);
+    //assert(reset_back_id(get_lv_sid(_lv_pos)) == REGULAR_TYPE_BITS);
     uint8_t type_id = get_type_id(pos);
     uint8_t tile_id = get_tile_id(pos);
     if (tile_id > TileId::EMPTY) {
@@ -653,12 +659,12 @@ void SANode::init_lv_ttid(Vector2i _lv_pos, Vector2i pos) {
     if (type_id < TypeId::REGULAR) {
         hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][type_id];
     }
-    lv[_lv_pos.y][_lv_pos.x] += (type_id << TILE_ID_BITLEN) - REGULAR_TYPE_BITS + tile_id;
+    lv[_lv_pos.y][_lv_pos.x] += make_type_bits(type_id) - REGULAR_TYPE_BITS + tile_id;
 }
 
 //init_lv_ttid() but with check to prevent duplicate hash update
 void SANode::init_lv_ttid_idempotent(Vector2i _lv_pos, Vector2i pos) {
-    if (remove_back_id(get_lv_sid(_lv_pos)) != REGULAR_TYPE_BITS) {
+    if (reset_back_id(get_lv_sid(_lv_pos)) != REGULAR_TYPE_BITS) {
         return;
     }
     init_lv_ttid(_lv_pos, pos);
@@ -676,11 +682,11 @@ void SANode::set_lv_sid(Vector2i _lv_pos, uint16_t new_sid) {
     if (old_type_id < TypeId::REGULAR) {
         hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][old_type_id];
     }
-    if (new_type_id < TypeId::REGULAR) {
-        hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][new_type_id];
-    }
     if (old_tile_id > TileId::EMPTY) {
         hash ^= tile_id_hash_keys[_lv_pos.y][_lv_pos.x][old_tile_id - 1];
+    }
+    if (new_type_id < TypeId::REGULAR) {
+        hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][new_type_id];
     }
     if (new_tile_id > TileId::EMPTY) {
         hash ^= tile_id_hash_keys[_lv_pos.y][_lv_pos.x][new_tile_id - 1];
@@ -695,8 +701,8 @@ void SANode::set_lv_pos(Vector2i _lv_pos) {
     hash ^= agent_pos_hash_keys[lv_pos.y][lv_pos.x];
 }
 
-//equivalent to set_lv_sid(_lv_pos, get_back_bits(get_lv_sid(_lv_pos))) but faster
-void SANode::clear_lv_sid(Vector2i _lv_pos) {
+//equivalent to set_lv_sid(_lv_pos, get_back_bits(get_lv_sid(_lv_pos)) + REGULAR_TYPE_BITS) but faster
+void SANode::reset_lv_sid(Vector2i _lv_pos) {
     uint16_t stuff_id = get_lv_sid(_lv_pos);
     uint8_t type_id = get_type_id(stuff_id);
     uint8_t tile_id = get_tile_id(stuff_id);
@@ -706,28 +712,35 @@ void SANode::clear_lv_sid(Vector2i _lv_pos) {
     if (tile_id != TileId::EMPTY) {
         hash ^= tile_id_hash_keys[_lv_pos.y][_lv_pos.x][tile_id - 1];
     }
-    lv[_lv_pos.y][_lv_pos.x] = get_back_bits(stuff_id);
+    lv[_lv_pos.y][_lv_pos.x] = get_back_bits(stuff_id) + REGULAR_TYPE_BITS;
 }
 
 //assume slide possible
 //updates lv_pos, lv, hash
 void SANode::perform_slide(Vector2i dir, int push_count) {
-    Vector2i merge_lv_pos = lv_pos + (push_count + 1) * dir;
+    Vector2i dest_lv_pos = lv_pos + (push_count + 1) * dir;
+    uint16_t merge_stuff_id = get_lv_sid(dest_lv_pos);
+    uint16_t dest_back_bits = get_back_bits(merge_stuff_id);
+    uint16_t result_stuff_id;
 
-    for (int dist_to_merge=0; dist_to_merge <= push_count; ++dist_to_merge) {
-        Vector2i curr_lv_pos = merge_lv_pos - dist_to_merge * dir;
-        uint16_t prev_sid = get_lv_sid(curr_lv_pos - dir);
-        uint16_t result_sid = prev_sid;
+    for (int dist_to_merge = 0; dist_to_merge <= push_count; ++dist_to_merge) {
+        uint16_t prev_stuff_id = get_lv_sid(dest_lv_pos - dir);
 
         if (dist_to_merge == 0) {
-            uint16_t curr_sid = get_lv_sid(curr_lv_pos);
-            result_sid = get_merged_stuff_id(prev_sid, curr_sid);
+            result_stuff_id = get_merged_stuff_id(prev_stuff_id, merge_stuff_id);
         }
-        set_lv_sid(curr_lv_pos, result_sid);
+        else {
+            result_stuff_id = dest_back_bits + reset_back_id(prev_stuff_id);
+        }
+        set_lv_sid(dest_lv_pos, result_stuff_id);
+
+        //update stuff
+        dest_lv_pos -= dir;
+        dest_back_bits = get_back_bits(prev_stuff_id);
     }
 
     //remove src tile
-    clear_lv_sid(lv_pos);
+    reset_lv_sid(lv_pos);
 
     //update lv_pos
     set_lv_pos(lv_pos + dir);
@@ -976,11 +989,17 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, bool allow_type_chan
         case SASearchId::IADA:
             ans = pathfind_sa_iada(max_depth, allow_type_change, min, max, start, end);
             break;
+        case SASearchId::IADANR:
+            ans = pathfind_sa_iadanr(max_depth, allow_type_change, min, max, start, end);
+            break;
         case SASearchId::HBJPMDA:
             ans = pathfind_sa_hbjpmda(max_depth, allow_type_change, min, max, start, end);
             break;
         case SASearchId::HBJPIADA:
             ans = pathfind_sa_hbjpiada(max_depth, allow_type_change, min, max, start, end);
+            break;
+        case SASearchId::HBJPIADANR:
+            ans = pathfind_sa_hbjpiadanr(max_depth, allow_type_change, min, max, start, end);
             break;
         case SASearchId::IWDMDA:
             ans = pathfind_sa_iwdmda(max_depth, allow_type_change, min, max, start, end);
@@ -1004,14 +1023,14 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
     //NEEDS PROFILING with deque
     //use ptrs bc prev requires a fixed addr, faster to copy
     //use shared_ptr instead of unique_ptr bc prev/neighbors also require it
-    open_sa_t open;
+    open_sa_gsort_t open;
     //to prevent duplicate nodes with equal or worse cost from being pushed to open
     //see CBS section 4.3, duplicate detection and pruning
     //change to unordered_set<LightweightSANode> for less memory usage but no collision checking,
     //where LightweightSANode only stores hash (for KeyEqual) and prev/prev_action (for trace_path())
     //IMPORTANT: not the same as closed, bc (with the exception of DIJKSTRA) best_dists is non-optimal
     //closed is redundant; shared_ptrs are stored in best_dists, so trace_path() will still work
-    closed_sa_t best_dists; //using f
+    closed_sa_t best_dists;
     Vector2i lv_end = end - min;
 
     shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
@@ -1025,14 +1044,14 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
-            return curr->trace_path_normalized_actions(curr->f);
+            return curr->trace_path_normalized_actions(curr->g);
         }
         //best_dists check is unnecessary bc open doesn’t receive duplicate nodes
         open.pop();
-        //assert(curr->f == (*best_dists.find(curr))->f);
+        //assert(curr->g == (*best_dists.find(curr))->g);
 
         //check max depth here bc all edges unit length
-        if (curr->f == max_depth) {
+        if (curr->g == max_depth) {
             continue;
         }
 
@@ -1043,7 +1062,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
 
                 if (!neighbor) {
                     continue;
@@ -1067,7 +1086,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
                 auto it = best_dists.find(neighbor);
                 if (it != best_dists.end()) {
                     //neighbor is duplicate
-                    //if (neighbor->f >= (*it)->f) {
+                    //if (neighbor->g >= (*it)->g) {
                         //neighbor has equal or worse cost
                         continue;
                     //}
@@ -1076,11 +1095,11 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
                         //use *it=neighbor (wrong syntax but i don't care) if neighbor path better, and curr!=best_dists.find(curr) in expanding best_dists check
                         //this way curr!=best_dists.find(curr) implies curr is a duplicate node with equal or worse dist
                         neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->f - neighbor->f); //so no neighbor info from better dist SASearchNodes is lost
+                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g); //so no neighbor info from better dist SASearchNodes is lost
                         best_dists.erase(it);
                     }*/
                 }
-                neighbor->f = curr->f + 1;
+                neighbor->g = curr->g + 1;
 
                 //if neighbor hasn't been visited, it can't be ancestor of curr => no loop
                 open.push(neighbor);
@@ -1093,7 +1112,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
 
 //open and best_dists not necessarily optimal
 Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    open_sa_t open;
+    open_sa_gsort_t open;
     closed_sa_t best_dists;
     Vector2i lv_end = end - min;
 
@@ -1106,7 +1125,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vecto
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos + min == end) {
-            return curr->trace_path_normalized_actions(curr->f);
+            return curr->trace_path_normalized_actions(curr->g);
         }
         //open may receive duplicate nodes (see Pictures/jpd_edge_case)
         open.pop();
@@ -1115,7 +1134,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vecto
         }
 
         //branch prediction makes this relatively quick, so check max_depth when both expanding and generating (unless it is redundant)
-        if (curr->f == max_depth) {
+        if (curr->g == max_depth) {
             continue;
         }
 
@@ -1131,27 +1150,27 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vecto
                     continue;
                 }
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
 
                 if (!neighbor) {
                     continue;
                 }
-                neighbor->f = curr->f + get_action_dist(neighbor->prev_action);
+                neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
 
                 //place check here to catch nodes that exceed max_depth as early as possible
                 //since open << closed for typical search, generating check is not much more expensive than expanding check
-                if (neighbor->f > max_depth) {
+                if (neighbor->g > max_depth) {
                     continue;
                 }
 
                 auto it = best_dists.find(neighbor);
                 if (it != best_dists.end()) {
-                    if (neighbor->f >= (*it)->f) {
+                    if (neighbor->g >= (*it)->g) {
                         continue;
                     }
                     else {
                         neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->f - neighbor->f);
+                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g);
                         best_dists.erase(it);
                     }
                 }
@@ -1166,7 +1185,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vecto
 //open and best_dists not necessarily optimal
 //closed optimal bc heuristic consistent (see SA lec5)
 Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    open_sa_t open;
+    open_sa_fsort_t open;
     closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
 
@@ -1200,7 +1219,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
 
                 if (!neighbor) {
                     continue;
@@ -1214,6 +1233,11 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
                 //if curr->g == max_depth, neighbor->g > max_depth, neighbor->f > max_depth, so no nodes are generated from max_depth
                 if (neighbor->f > max_depth) {
                     continue;
+                }
+
+                //debug
+                if (neighbor->sanode->hash == -8848613415287748772) {
+                    UtilityFunctions::print("generated from g = ", curr->g);
                 }
 
                 auto it = best_dists.find(neighbor);
@@ -1237,6 +1261,11 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
                         best_dists.erase(it);
                     }
                 }
+                //debug
+                else if (neighbor->sanode->hash == -8848613415287748772) {
+                    UtilityFunctions::print("not found in best_dists");
+                }
+
                 open.push(neighbor);
                 best_dists.insert(neighbor);
             }
@@ -1249,7 +1278,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
 //open and returned path are not necessarily optimal
 //if h(first) == numeric_limits<int>::max(), exit early bc no path exists
 Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    open_sa_t open;
+    open_sa_fsort_t open;
     closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
     uint8_t agent_type_id = get_type_id(start);
@@ -1290,7 +1319,7 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
 
                 if (!neighbor) {
                     continue;
@@ -1319,9 +1348,86 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
     return Array();
 }
 
+Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    open_sa_fsort_t open;
+    closed_sa_t closed;
+    closed_sa_t best_dists; //to prevent duplicate nodes with equal or worse cost from being pushed to open
+    Vector2i lv_end = end - min;
+    uint8_t agent_type_id = get_type_id(start);
+    rrd_init_iad(end);
+
+    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    first->init_sanode(min, max, start);
+    first->h = rrd_resume_iad(end, start, agent_type_id);
+
+    //enclosed goal check
+    if (first->h == numeric_limits<int>::max()) {
+        return Array();
+    }
+
+    first->f = first->h;
+    //first can have prev_action and prev_push_count uninitialized
+    open.push(first);
+    best_dists.insert(first);
+
+    while (!open.empty()) {
+        shared_ptr<SASearchNode> curr = open.top();
+
+        if (curr->sanode->lv_pos == lv_end) {
+            return curr->trace_path_normalized_actions(curr->g);
+        }
+        open.pop();
+
+        //closed check
+        if (closed.find(curr) != closed.end()) {
+            continue;
+        }
+        closed.insert(curr);
+
+        if (curr->g == max_depth) {
+            continue;
+        }
+
+        for (Vector2i dir : DIRECTIONS) {
+            if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
+                continue;
+            }
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
+
+                if (!neighbor) {
+                    continue;
+                }
+                neighbor->g = curr->g + 1;
+                neighbor->h = rrd_resume_iad(end, min + neighbor->sanode->lv_pos, agent_type_id);
+                neighbor->f = neighbor->g + neighbor->h;
+
+                if (closed.find(neighbor) != closed.end()) {
+                    continue;
+                }
+                auto it = best_dists.find(neighbor);
+                if (it != best_dists.end()) {
+                    if (neighbor->g >= (*it)->g) {
+                        continue;
+                    }
+                    else {
+                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
+                        (*it)->transfer_neighbors(neighbor, (*it)->f - neighbor->f);
+                        best_dists.erase(it);
+                    }
+                }
+                open.push(neighbor);
+                best_dists.insert(neighbor);
+            }
+        }
+    }
+    return Array();
+}
+
 //closed optimal, open and best_dists not
 Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    open_sa_t open;
+    open_sa_fsort_t open;
     closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
 
@@ -1358,7 +1464,7 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vec
                     continue;
                 }
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
 
                 if (!neighbor) {
                     continue;
@@ -1396,7 +1502,7 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vec
 //open and returned path are not necessarily optimal
 //if h(first) == numeric_limits<int>::max(), exit early bc no path exists
 Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    open_sa_t open;
+    open_sa_fsort_t open;
     closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
     uint8_t agent_type_id = get_type_id(start);
@@ -1440,7 +1546,7 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
                     continue;
                 }
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
 
                 if (!neighbor) {
                     continue;
@@ -1455,6 +1561,90 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
                     continue;
                 }
 
+                auto it = best_dists.find(neighbor);
+                if (it != best_dists.end()) {
+                    if (neighbor->g >= (*it)->g) {
+                        continue;
+                    }
+                    else {
+                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
+                        (*it)->transfer_neighbors(neighbor, (*it)->f - neighbor->f);
+                        best_dists.erase(it);
+                    }
+                }
+                open.push(neighbor);
+                best_dists.insert(neighbor);
+            }
+        }
+    }
+    return Array();
+}
+
+Array Pathfinder::pathfind_sa_hbjpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    open_sa_fsort_t open;
+    closed_sa_t closed;
+    closed_sa_t best_dists; //to prevent duplicate nodes with equal or worse cost from being pushed to open
+    Vector2i lv_end = end - min;
+    uint8_t agent_type_id = get_type_id(start);
+    rrd_init_iad(end);
+
+    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    first->init_sanode(min, max, start);
+    first->h = rrd_resume_iad(end, start, agent_type_id);
+
+    //enclosed goal check
+    if (first->h == numeric_limits<int>::max()) {
+        return Array();
+    }
+
+    first->f = first->h;
+    //first can have prev_action and prev_push_count uninitialized
+    open.push(first);
+    best_dists.insert(first);
+
+    while (!open.empty()) {
+        shared_ptr<SASearchNode> curr = open.top();
+
+        if (curr->sanode->lv_pos == lv_end) {
+            return curr->trace_path_normalized_actions(curr->g);
+        }
+        open.pop();
+
+        //closed check
+        if (closed.find(curr) != closed.end()) {
+            continue;
+        }
+        closed.insert(curr);
+
+        if (curr->g == max_depth) {
+            continue;
+        }
+
+        for (Vector2i dir : DIRECTIONS) {
+            if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
+                continue;
+            }
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
+                if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
+                    continue;
+                }
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
+
+                if (!neighbor) {
+                    continue;
+                }
+                neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
+                neighbor->h = rrd_resume_iad(end, min + neighbor->sanode->lv_pos, agent_type_id);
+                neighbor->f = neighbor->g + neighbor->h;
+
+                if (neighbor->g > max_depth) {
+                    continue;
+                }
+
+                if (closed.find(neighbor) != closed.end()) {
+                    continue;
+                }
                 auto it = best_dists.find(neighbor);
                 if (it != best_dists.end()) {
                     if (neighbor->g >= (*it)->g) {
@@ -1495,6 +1685,8 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
 //for multi-agent version, iwd SANodes are reusable
 //if an iterative search ends with no valid path found, don't update any heuristics in the next iteration
 //if prev iteration has multiple optimal paths, use all of them? NAH, prioritize speed
+
+//assume start != end (otherwise there are duplicate init_lv_ttid() calls)
 Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     //don't skip the radius = 0 search (there could be walls)
     int manhattan_dist_to_end = manhattan_dist(start, end);
@@ -1506,7 +1698,7 @@ Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vect
     shared_ptr<SANode> shape_sanode = make_shared<SANode>();
     shape_sanode->set_lv_pos(start - min);
     shape_sanode->init_lv_back_ids(min, max);
-    shape_sanode->set_lv_sid(shape_sanode->lv_pos, get_stuff_id(start));
+    shape_sanode->init_lv_ttid(shape_sanode->lv_pos, start);
     unique_ptr<PathInfo> pi = make_unique<PathInfo>();
 
     //enclosed goal check (radius == -1, no tile_id at dest)
@@ -1514,7 +1706,7 @@ Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vect
     if (!pi->normalized_actions.size()) {
         return Array();
     }
-    shape_sanode->set_lv_sid(lv_end, get_stuff_id(end));
+    shape_sanode->init_lv_ttid(lv_end, end);
 
     while (radius < manhattan_dist_to_end - 1) {
         path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, false, radius, get_radius);

@@ -82,8 +82,10 @@ enum SASearchId {
     HBJPD, //horizontally biased jump point dijkstra
 	MDA, //manhattan distance astar
     IADA, //inconsistent abstract distance astar
+    IADANR, //* no re-expansion
     HBJPMDA,
     HBJPIADA,
+    HBJPIADANR,
     IWDMDA, //iterative widening diamond *
     IWDHBJPMDA,
     IWSMDA, //iterative widening square *
@@ -176,7 +178,7 @@ const int TILE_AND_TYPE_ID_BITLEN = TILE_ID_BITLEN + TYPE_ID_BITLEN;
 const int TILE_ID_COUNT = 1 << TILE_ID_BITLEN;
 const uint16_t TILE_ID_MASK = TILE_ID_COUNT - 1;
 const uint16_t TYPE_ID_MASK = ((1 << TYPE_ID_BITLEN) - 1) << TILE_ID_BITLEN;
-const uint16_t BACK_ID_MASK = ((1 << BACK_ID_BITLEN) - 1) << (TILE_ID_BITLEN + TYPE_ID_BITLEN);
+const uint16_t BACK_ID_MASK = ((1 << BACK_ID_BITLEN) - 1) << TILE_AND_TYPE_ID_BITLEN;
 const uint16_t BACK_AND_TYPE_ID_MASK = BACK_ID_MASK + TYPE_ID_MASK;
 const uint16_t BACK_AND_TILE_ID_MASK = BACK_ID_MASK + TILE_ID_MASK;
 const uint16_t TYPE_AND_TILE_ID_MASK = TYPE_ID_MASK + TILE_ID_MASK;
@@ -264,33 +266,14 @@ struct CADNodeEquator {
     }
 };
 
-//for is_goal_enclosed()
-struct EnclosureNode {
-    Vector2i lv_pos;
-    int g=0, h=0, f=0;
-
-    EnclosureNode(Vector2i _lv_pos) : lv_pos(_lv_pos) {}
-    EnclosureNode jump(Vector2i dir, shared_ptr<SANode> env, uint8_t agent_type_id);
-};
-
-struct EnclosureNodeComparer {
-    bool operator() (const EnclosureNode& first, const EnclosureNode& second) const {
-        if (first.f > second.f) {
-            return true;
-        }
-        if (first.f < second.f) {
-            return false;
-        }
-        return first.g < second.g;
-    }
-};
-
 //inline is unnecessary, see StackOverflow/1759300
 template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
 }
 
-uint16_t get_stuff_id(uint8_t back_id, uint8_t type_id, uint8_t tile_id);
+uint16_t make_stuff_id(uint8_t back_id, uint8_t type_id, uint8_t tile_id);
+uint16_t make_back_bits(uint8_t back_id);
+uint16_t make_type_bits(uint8_t type_id);
 uint16_t get_type_bits(uint16_t stuff_id);
 uint16_t get_back_bits(uint16_t stuff_id);
 uint8_t get_tile_id(uint16_t stuff_id);
@@ -300,9 +283,9 @@ uint16_t get_stuff_id(Vector2i pos);
 uint8_t get_tile_id(Vector2i pos);
 uint8_t get_type_id(Vector2i pos);
 uint8_t get_back_id(Vector2i pos);
-uint16_t remove_tile_id(uint16_t stuff_id);
-uint16_t regular_type_id(uint16_t stuff_id);
-uint16_t remove_back_id(uint16_t stuff_id);
+uint16_t reset_tile_id(uint16_t stuff_id);
+uint16_t reset_type_id(uint16_t stuff_id);
+uint16_t reset_back_id(uint16_t stuff_id);
 bool is_compatible(uint8_t type_id, uint8_t back_id);
 bool is_ids_mergeable(uint8_t tile_id1, uint8_t tile_id2);
 bool is_ids_split_mergeable(uint8_t src_tile_id, uint8_t dest_tile_id);
@@ -393,7 +376,7 @@ struct SANode : public enable_shared_from_this<SANode> {
     void init_lv_ttid_idempotent(Vector2i _lv_pos, Vector2i pos);
     void set_lv_sid(Vector2i _lv_pos, uint16_t new_sid);
     void set_lv_pos(Vector2i _lv_pos);
-    void clear_lv_sid(Vector2i _lv_pos);
+    void reset_lv_sid(Vector2i _lv_pos);
     void perform_slide(Vector2i dir, int push_count);
 
     void print_lv() const;
@@ -421,6 +404,27 @@ struct SANeighbor {
         {}
 };
 
+//for is_goal_enclosed()
+struct EnclosureNode {
+    Vector2i lv_pos;
+    int g=0, h=0, f=0;
+
+    EnclosureNode(Vector2i _lv_pos) : lv_pos(_lv_pos) {}
+    EnclosureNode jump(Vector2i dir, shared_ptr<SANode> env, uint8_t agent_type_id);
+};
+
+struct EnclosureNodeComparer {
+    bool operator() (const EnclosureNode& first, const EnclosureNode& second) const {
+        if (first.f > second.f) {
+            return true;
+        }
+        if (first.f < second.f) {
+            return false;
+        }
+        return first.g < second.g;
+    }
+};
+
 //shared bc multiple children have prev pointer
 template <typename SASearchNode_t>
 struct SASearchNodeBase : public enable_shared_from_this<SASearchNodeBase<SASearchNode_t>> {
@@ -441,9 +445,11 @@ struct SASearchNodeBase : public enable_shared_from_this<SASearchNodeBase<SASear
     void init_sanode(Vector2i min, Vector2i max, Vector2i start);
     shared_ptr<SASearchNode_t> try_slide(Vector2i dir, bool allow_type_change);
     shared_ptr<SASearchNode_t> try_split(Vector2i dir, bool allow_type_change);
-    shared_ptr<SASearchNode_t> try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change);
+    template <typename BestDists_t>
+    shared_ptr<SASearchNode_t> try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists);
 
-    shared_ptr<SASearchNode_t> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change);
+    template <typename BestDists_t>
+    shared_ptr<SASearchNode_t> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists);
     shared_ptr<SASearchNode_t> get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist);
     void prune_invalid_action_ids(Vector2i dir);
     void prune_backtrack(Vector2i dir);
@@ -483,6 +489,10 @@ struct SASearchNodeBaseEquator {
 		//return (first->lv_pos == second->lv_pos && first->lv == second->lv);
         //return first->hash == second->hash && first->lv_pos == second->lv_pos && first->lv == second->lv;
         if  (first->sanode->hash == second->sanode->hash) {
+            if (first->sanode->hash == -8848613415287748772) {
+                first->sanode->print_lv();
+                second->sanode->print_lv();
+            }
             if (first->sanode->lv_pos == second->sanode->lv_pos && first->sanode->lv == second->sanode->lv) {
                 return true;
             }
@@ -494,7 +504,7 @@ struct SASearchNodeBaseEquator {
 
 //if f tied, use g; higher g indicates higher confidence
 template <typename SASearchNode_t>
-struct SASearchNodeBaseComparer {
+struct SASearchNodeBaseFComparer {
 	bool operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>>& first, const shared_ptr<SASearchNodeBase<SASearchNode_t>>& second) {
 		if (first->f > second->f) {
 			return true;
@@ -504,6 +514,13 @@ struct SASearchNodeBaseComparer {
 		}
 		return first->g < second->g;
 	}
+};
+
+template <typename SASearchNode_t>
+struct SASearchNodeBaseGComparer {
+    bool operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>>& first, const shared_ptr<SASearchNodeBase<SASearchNode_t>>& second) {
+        return first->g > second->g;
+    }
 };
 
 
@@ -528,8 +545,10 @@ public:
     Array pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_iada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_hbjpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
 
     //should starts/ends be same size?
@@ -559,9 +578,10 @@ typedef priority_queue<IADNode, vector<IADNode>, IADNodeComparer> open_iad_t;
 typedef priority_queue<shared_ptr<CADNode>, vector<shared_ptr<CADNode>>, CADNodeComparer> open_cad_t;
 typedef unordered_set<shared_ptr<CADNode>, CADNodeHasher, CADNodeEquator> closed_cad_t;
 typedef unordered_map<Vector2i, int, Vector2iHasher> best_dist_t; //node_pos, best_g
-typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeBaseComparer<SASearchNode>> open_sa_t;
+typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeBaseFComparer<SASearchNode>> open_sa_fsort_t;
+typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeBaseGComparer<SASearchNode>> open_sa_gsort_t;
 typedef unordered_set<shared_ptr<SASearchNode>, SASearchNodeBaseHashGetter<SASearchNode>, SASearchNodeBaseEquator<SASearchNode>> closed_sa_t;
-typedef priority_queue<shared_ptr<SAPISearchNode>, vector<shared_ptr<SAPISearchNode>>, SASearchNodeBaseComparer<SAPISearchNode>> open_sapi_t;
+typedef priority_queue<shared_ptr<SAPISearchNode>, vector<shared_ptr<SAPISearchNode>>, SASearchNodeBaseFComparer<SAPISearchNode>> open_sapi_fsort_t;
 typedef unordered_set<shared_ptr<SAPISearchNode>, SASearchNodeBaseHashGetter<SAPISearchNode>, SASearchNodeBaseEquator<SAPISearchNode>> closed_sapi_t;
 
 struct RRDIADLists {

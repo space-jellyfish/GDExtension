@@ -502,3 +502,27 @@ uint16_t curr_stuff_id = sanode->get_lv_sid(curr_pos);
 if (!is_tile_empty_and_regular(curr_stuff_id) || !is_compatible(src_type_id, get_back_id(curr_stuff_id))) {
     return nullptr;
 }*/
+
+/*
+void set_lv_ttid(Vector2i _lv_pos, uint8_t type_id, uint8_t tile_id);
+
+void SANode::set_lv_ttid(Vector2i _lv_pos, uint8_t type_id, uint8_t tile_id) {
+    uint16_t old_sid = get_lv_sid(_lv_pos);
+    uint8_t old_tile_id = get_tile_id(old_sid);
+    uint8_t old_type_id = get_type_id(old_sid);
+
+    if (old_type_id < TypeId::REGULAR) {
+        hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][old_type_id];
+    }
+    if (old_tile_id > TileId::EMPTY) {
+        hash ^= tile_id_hash_keys[_lv_pos.y][_lv_pos.x][old_tile_id - 1];
+    }
+    if (type_id < TypeId::REGULAR) {
+        hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][type_id];
+    }
+    if (tile_id > TileId::EMPTY) {
+        hash ^= tile_id_hash_keys[_lv_pos.y][_lv_pos.x][tile_id - 1];
+    }
+    lv[_lv_pos.y][_lv_pos.x] = make_stuff_id(get_back_id(old_sid), type_id, tile_id);
+}
+*/

@@ -61,7 +61,8 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_split(Vector2i 
 //updates prev_action for slide/split, stores result in curr->neighbors
 //return newly-created SASearchNode (this ensures duplicate detection works as intended)
 template <typename SASearchNode_t>
-shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change) {
+template <typename BestDists_t>
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists) {
     //check for stored neighbor
     auto it = neighbors.find(normalized_action);
     if (it != neighbors.end()) {
@@ -97,7 +98,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
             ans = try_split(dir, allow_type_change);
             break;
         case ActionId::JUMP:
-            ans = try_jump(dir, lv_end, allow_type_change);
+            ans = try_jump(dir, lv_end, allow_type_change, best_dists);
             break;
         default:
             ans = try_slide(dir, allow_type_change);
@@ -123,7 +124,8 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
 //see Devlog/jump_conditions for details
 //when generating from jp, generate split in all dirs, generate slide iff next tile isn't empty_and_regular
 template <typename SASearchNode_t>
-shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change) {
+template <typename BestDists_t>
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists) {
     //check bounds NAH, pathfind_sa*() checks while generating
     //check obstruction
     uint8_t src_type_id = get_type_id(sanode->get_lv_sid(sanode->lv_pos));
@@ -161,6 +163,21 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
         //get current jump point; reuse sanode if possible
         shared_ptr<SANode> prev_sanode = (curr_dist > 1) ? curr_jp->sanode : nullptr;
         curr_jp = get_jump_point(prev_sanode, dir, curr_pos, curr_dist);
+
+        //check if visited with equal or better dist
+        auto it = best_dists.find(curr_jp);
+        if (it != best_dists.end()) {
+            int curr_g = g + curr_dist;
+            if ((*it)->g <= curr_g) {
+                //see Pictures/node_along_jump_that_is_visited_with_better_g_handles_remainder_of_jump
+                transfer_neighbors(*it, curr_g - (*it)->g);
+                return nullptr;
+            }
+            else {
+                //found better path, declare curr_jp as jump point
+                return curr_jp;
+            }
+        }
 
         //check lv_end
         if (curr_pos == lv_end) {
@@ -232,7 +249,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
 
                 Vector3i normalized_next_action(next_dir.dir.x, next_dir.dir.y, action_id);
                 //this does not create any permanent refs to curr_jp->sanode, so it can be reused for the next curr_jp
-                shared_ptr<SASearchNode_t> neighbor = curr_jp->try_action(normalized_next_action, lv_end, allow_type_change);
+                shared_ptr<SASearchNode_t> neighbor = curr_jp->try_action(normalized_next_action, lv_end, allow_type_change, best_dists);
                 if (neighbor) {
                     if (!horizontal || next_dir.dir == dir || next_dir.blocked || action_id != ActionId::SLIDE || neighbor->prev_push_count) {
                         ans = curr_jp;
@@ -274,7 +291,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::get_jump_point(shar
     Vector2i src_lv_pos = ans->sanode->lv_pos;
     ans->sanode->set_lv_pos(jp_pos);
     ans->sanode->set_lv_sid(jp_pos, get_jumped_stuff_id(ans->sanode->get_lv_sid(src_lv_pos), ans->sanode->get_lv_sid(jp_pos)));
-    ans->sanode->clear_lv_sid(src_lv_pos);
+    ans->sanode->reset_lv_sid(src_lv_pos);
 
     //prev stuff
     ans->prev_action = Vector3i(jump_dist * dir.x, jump_dist * dir.y, ActionId::JUMP);
