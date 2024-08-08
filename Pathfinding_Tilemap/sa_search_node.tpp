@@ -209,13 +209,14 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
             if (!next_compatible) {
                 curr_jp->prune_invalid_action_ids(next_dir.dir);
                 //update blocked
-                next_dir.blocked = !next_empty_and_regular;
+                next_dir.blocked = true;
                 continue;
             }
 
             if (next_empty_and_regular) {
                 //next empty check
                 if (next_dir.dir == dir) {
+                    //blocked in jump_dir is DON'T CARE, no need to update
                     continue;
                 }
 
@@ -226,6 +227,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
                     //horizontal forced neighbor check
                     if (next_dir.blocked) {
                         ans = curr_jp;
+                        //ans found, no need to update blocked
                         continue;
                     }
                     else {
