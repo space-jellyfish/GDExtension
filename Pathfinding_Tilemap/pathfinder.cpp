@@ -1235,11 +1235,6 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
                     continue;
                 }
 
-                //debug
-                if (neighbor->sanode->hash == -8848613415287748772) {
-                    UtilityFunctions::print("generated from g = ", curr->g);
-                }
-
                 auto it = best_dists.find(neighbor);
                 if (it != best_dists.end()) {
                     if (neighbor->g >= (*it)->g) {
@@ -1260,10 +1255,6 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
                         (*it)->transfer_neighbors(neighbor, (*it)->f - neighbor->f);
                         best_dists.erase(it);
                     }
-                }
-                //debug
-                else if (neighbor->sanode->hash == -8848613415287748772) {
-                    UtilityFunctions::print("not found in best_dists");
                 }
 
                 open.push(neighbor);

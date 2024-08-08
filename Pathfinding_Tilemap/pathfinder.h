@@ -489,10 +489,6 @@ struct SASearchNodeBaseEquator {
 		//return (first->lv_pos == second->lv_pos && first->lv == second->lv);
         //return first->hash == second->hash && first->lv_pos == second->lv_pos && first->lv == second->lv;
         if  (first->sanode->hash == second->sanode->hash) {
-            if (first->sanode->hash == -8848613415287748772) {
-                first->sanode->print_lv();
-                second->sanode->print_lv();
-            }
             if (first->sanode->lv_pos == second->sanode->lv_pos && first->sanode->lv == second->sanode->lv) {
                 return true;
             }
