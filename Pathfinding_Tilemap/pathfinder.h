@@ -195,6 +195,16 @@ struct NextDir {
     NextDir(Vector2i _dir, bool _in_bounds, bool _blocked) : dir(_dir), in_bounds(_in_bounds), blocked(_blocked) {}
 };
 
+struct NextDirConstrained : NextDir {
+    int max_jump_dist;
+
+    NextDirConstrained() {}
+    NextDirConstrained(Vector2i _dir, bool _in_bounds, bool _blocked, int _max_jump_dist)
+        : NextDir(_dir, _in_bounds, _blocked)
+        , max_jump_dist(_max_jump_dist)
+        {}
+};
+
 struct PathNode {
     Vector2i lv_pos;
     int index;
@@ -450,6 +460,8 @@ struct SASearchNodeBase : public enable_shared_from_this<SASearchNodeBase<SASear
 
     template <typename BestDists_t>
     shared_ptr<SASearchNode_t> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists);
+    template <typename BestDists_t>
+    shared_ptr<SASearchNode_t> try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists);
     shared_ptr<SASearchNode_t> get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist);
     void prune_invalid_action_ids(Vector2i dir);
     void prune_backtrack(Vector2i dir);

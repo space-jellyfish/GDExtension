@@ -118,6 +118,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
 }
 
 //assume immediate neighbor is in_bounds
+//jump_dist is bounded by sanode size (MAX_SEARCH_WIDTH/MAX_SEARCH_HEIGHT)
 //updates prev, prev_action, prev_push_count
 //doesn't change agent type/tile_id
 //only jump through empty_and_regular tiles
@@ -139,6 +140,169 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
     //init next_dirs
     bool horizontal = (H_DIRS.find(dir) != H_DIRS.end());
     array<NextDir, 3> next_dirs;
+    auto next_dirs_itr = next_dirs.begin();
+    Vector2i perp_dir1 = horizontal ? Vector2i(0, 1) : Vector2i(1, 0);
+    Vector2i perp_dir2 = horizontal ? Vector2i(0, -1) : Vector2i(-1, 0);
+    for (Vector2i next_dir : {perp_dir1, perp_dir2}) {
+        if (!sanode->get_dist_to_lv_edge(curr_pos, next_dir)) {
+            *next_dirs_itr = NextDir(next_dir, false, false);
+        }
+        else {
+            uint16_t next_stuff_id = sanode->get_lv_sid(sanode->lv_pos + next_dir);
+            bool blocked = !(is_tile_empty_and_regular(next_stuff_id) && is_compatible(src_type_id, get_back_id(next_stuff_id)));
+            *next_dirs_itr = NextDir(next_dir, true, blocked);
+        }
+        ++next_dirs_itr;
+    }
+    int dist_to_lv_edge = sanode->get_dist_to_lv_edge(sanode->lv_pos, dir);
+    int curr_dist = 1;
+    *next_dirs_itr = NextDir(dir, curr_dist < dist_to_lv_edge, false);
+    shared_ptr<SASearchNode_t> curr_jp;
+    shared_ptr<SASearchNode_t> ans;
+
+    while (curr_dist <= dist_to_lv_edge) {
+        //get current jump point; reuse sanode if possible
+        shared_ptr<SANode> prev_sanode = (curr_dist > 1) ? curr_jp->sanode : nullptr;
+        curr_jp = get_jump_point(prev_sanode, dir, curr_pos, curr_dist);
+
+        //check if visited with equal or better dist
+        auto it = best_dists.find(curr_jp);
+        if (it != best_dists.end()) {
+            int curr_g = g + curr_dist;
+            if ((*it)->g <= curr_g) {
+                //see Pictures/node_along_jump_that_is_visited_with_better_g_handles_remainder_of_jump
+                transfer_neighbors(*it, curr_g - (*it)->g);
+                return nullptr;
+            }
+            else {
+                //found better path, declare curr_jp as jump point
+                return curr_jp;
+            }
+        }
+
+        //check lv_end
+        if (curr_pos == lv_end) {
+            return curr_jp;
+        }
+
+        //check for jump conditions
+        for (NextDir& next_dir : next_dirs) {
+            //bound check
+            if (!next_dir.in_bounds) { //once false, in_bounds stays false
+                //curr_jp->prune_invalid_action_ids(next_dir.dir); //redundant, pathfind_sa_*() does bounds check
+                continue;
+            }
+            //update in_bounds?
+            //if next_dir.dir != dir, no bc in_bounds cannot change
+            //if next_dir.dir == dir, yes bc while loop only ensures curr_pos is in_bounds
+
+            uint16_t next_stuff_id = sanode->get_lv_sid(curr_pos + next_dir.dir);
+            bool next_compatible = is_compatible(src_type_id, get_back_id(next_stuff_id));
+            bool next_empty_and_regular = is_tile_empty_and_regular(next_stuff_id);
+            //update next_obstructed; this can be safely skipped if while loop will exit (ans || (!next_dir.in_bounds && next_dir.dir == dir))
+            //update in_bounds since it uses the same if expression
+            if (!ans && next_dir.dir == dir) {
+                next_obstructed = !next_empty_and_regular || !next_compatible;
+                next_dir.in_bounds = curr_dist + 1 < dist_to_lv_edge;
+            }
+
+            //compatibility check
+            if (!next_compatible) {
+                curr_jp->prune_invalid_action_ids(next_dir.dir);
+                //update blocked
+                next_dir.blocked = true;
+                continue;
+            }
+
+            if (next_empty_and_regular) {
+                //next empty check
+                if (next_dir.dir == dir) {
+                    //blocked in jump_dir is DON'T CARE, no need to update
+                    continue;
+                }
+
+                //prune slide if empty (to skip upcoming try_action(), not redundant)
+                curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::SLIDE)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+
+                if (horizontal && next_dir.dir != dir) {
+                    //horizontal forced neighbor check
+                    if (next_dir.blocked) {
+                        ans = curr_jp;
+                        //ans found, no need to update blocked
+                        continue;
+                    }
+                    else {
+                        //prune jump if horizontal, perp, and not blocked
+                        //unprune_threshold should be 1, see Pictures/jps_nonnatural_nonforced_unprune_threshold_should_be_one
+                        curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP)] = {1, nullptr, 0};
+                    }
+                }
+            }
+            else {
+                //prune jump if not
+                curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+            }
+
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
+                //store next_action result in curr_jp->neighbors and if valid, return curr_jp
+                //!(vertical && next_dir.dir == dir && empty) bc "next empty check"
+                if (action_id == ActionId::JUMP && (horizontal || !next_empty_and_regular)) {
+                    continue;
+                }
+
+                Vector3i normalized_next_action(next_dir.dir.x, next_dir.dir.y, action_id);
+                //this does not create any permanent refs to curr_jp->sanode, so it can be reused for the next curr_jp
+                shared_ptr<SASearchNode_t> neighbor = curr_jp->try_action(normalized_next_action, lv_end, allow_type_change, best_dists);
+                if (neighbor) {
+                    if (!horizontal || next_dir.dir == dir || next_dir.blocked || action_id != ActionId::SLIDE || neighbor->prev_push_count) {
+                        ans = curr_jp;
+                    }
+                    else {
+                        curr_jp->neighbors[normalized_next_action] = {1, nullptr, 0};
+                    }
+                }
+                if (ans) {
+                    break;
+                }
+            }
+
+            //update blocked
+            next_dir.blocked = !(next_empty_and_regular && next_compatible);
+        }
+        //check ans
+        if (ans) {
+            return ans;
+        }
+
+        //check obstruction
+        if (next_obstructed) {
+            return nullptr;
+        }
+        curr_pos += dir;
+        ++curr_dist;
+    }
+
+    return nullptr;
+}
+
+//assume node v (left/right cjps neighbor) is initialized
+//return a_i when jp found; constraint is effectively updated when a_i continues the vertical jump
+template <typename SASearchNode_t>
+template <typename BestDists_t>
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists) {
+    //check bounds NAH, pathfind_sa*() checks while generating
+    //check obstruction
+    uint8_t src_type_id = get_type_id(sanode->get_lv_sid(sanode->lv_pos));
+    Vector2i curr_pos = sanode->lv_pos + dir;
+    uint16_t curr_stuff_id = sanode->get_lv_sid(curr_pos);
+    if (!is_tile_empty_and_regular(curr_stuff_id) || !is_compatible(src_type_id, get_back_id(curr_stuff_id))) {
+        return nullptr;
+    }
+    bool next_obstructed = false;
+
+    //init next_dirs
+    bool horizontal = (H_DIRS.find(dir) != H_DIRS.end());
+    array<NextDirConstrained, 3> next_dirs;
     auto next_dirs_itr = next_dirs.begin();
     Vector2i perp_dir1 = horizontal ? Vector2i(0, 1) : Vector2i(1, 0);
     Vector2i perp_dir2 = horizontal ? Vector2i(0, -1) : Vector2i(-1, 0);
