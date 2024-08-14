@@ -430,7 +430,7 @@ int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id) {
         }*/
 
         uint8_t curr_tile_id = get_tile_id(n.pos);
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             Vector2i next_pos = n.pos + dir;
 
             if (!is_compatible(agent_type_id, get_back_id(next_pos))) {
@@ -524,7 +524,7 @@ int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
             continue;
         }*/
 
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             Vector2i next_pos = curr->pos + dir;
 
             if (!is_compatible(agent_type_id, get_back_id(next_pos))) {
@@ -1004,6 +1004,18 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, bool allow_type_chan
         case SASearchId::JPIADANR:
             ans = pathfind_sa_jpiadanr(max_depth, allow_type_change, min, max, start, end);
             break;
+        case SASearchId::CJPD:
+            ans = pathfind_sa_cjpd(max_depth, allow_type_change, min, max, start, end);
+            break;
+        case SASearchId::CJPMDA:
+            ans = pathfind_sa_cjpmda(max_depth, allow_type_change, min, max, start, end);
+            break;
+        case SASearchId::CJPIADA:
+            ans = pathfind_sa_cjpiada(max_depth, allow_type_change, min, max, start, end);
+            break;
+        case SASearchId::CJPIADANR:
+            ans = pathfind_sa_cjpiadanr(max_depth, allow_type_change, min, max, start, end);
+            break;
         default:
             break;
     }
@@ -1056,7 +1068,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
         }
 
         //generate neighbors
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1141,7 +1153,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
             continue;
         }
 
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1232,7 +1244,7 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
             continue;
         }
 
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1307,7 +1319,7 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
             continue;
         }
 
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1427,7 +1439,7 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
             continue;
         }
 
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1501,7 +1513,7 @@ Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vecto
             continue;
         }
 
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1583,7 +1595,7 @@ Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vect
             continue;
         }
 
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1666,7 +1678,7 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
             continue;
         }
 
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1708,6 +1720,89 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
         }
     }
     return Array();
+}
+
+Array pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    open_sa_gsort_t open;
+    closed_sa_t best_dists;
+    Vector2i lv_end = end - min;
+
+    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    first->init_sanode(min, max, start);
+    open.push(first);
+    best_dists.insert(first);
+
+    while (!open.empty()) {
+        shared_ptr<SASearchNode> curr = open.top();
+
+        if (curr->sanode->lv_pos + min == end) {
+            return curr->trace_path_normalized_actions(curr->g);
+        }
+        //open may receive duplicate nodes (see Pictures/jpd_edge_case)
+        open.pop();
+        if (curr != *best_dists.find(curr)) {
+            continue;
+        }
+
+        //branch prediction makes this relatively quick, so check max_depth when both expanding and generating (unless it is redundant)
+        if (curr->g == max_depth) {
+            continue;
+        }
+
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
+            if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
+                continue;
+            }
+            for (int action_id : {ActionId::SLIDE, ActionId::SPLIT, ActionId::CONSTRAINED_JUMP}) {
+                //generate split in all dirs, don't generate slide if next tile is empty_and_regular
+                //generate jump iff next tile is empty_and_regular and dir is natural - handled in try_jump()
+                //only search in dir of natural neighbors (except first node) - handled via pruning
+                if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
+                    continue;
+                }
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
+
+                if (!neighbor) {
+                    continue;
+                }
+                neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
+
+                //place check here to catch nodes that exceed max_depth as early as possible
+                //since open << closed for typical search, generating check is not much more expensive than expanding check
+                if (neighbor->g > max_depth) {
+                    continue;
+                }
+
+                auto it = best_dists.find(neighbor);
+                if (it != best_dists.end()) {
+                    if (neighbor->g >= (*it)->g) {
+                        continue;
+                    }
+                    else {
+                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
+                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g);
+                        best_dists.erase(it);
+                    }
+                }
+                open.push(neighbor);
+                best_dists.insert(neighbor);
+            }  
+        }
+    }
+    return Array();
+}
+
+Array pathfind_sa_cjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+
+}
+
+Array pathfind_sa_cjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+
+}
+
+Array pathfind_sa_cjpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+
 }
 
 void Pathfinder::set_player_pos(Vector2i pos) {
@@ -1786,7 +1881,7 @@ bool Pathfinder::is_goal_enclosed(shared_ptr<SANode> env, Vector2i lv_end) {
             continue;
         }
 
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             
         }
     }

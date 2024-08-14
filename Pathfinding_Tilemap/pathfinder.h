@@ -171,7 +171,7 @@ struct ActionHasher {
 const unordered_set<uint8_t> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
 const unordered_set<uint8_t> B_SAVE_OR_GOAL = {BackId::SAVEPOINT, BackId::GOAL};
 const unordered_set<uint8_t> T_ENEMY = {TypeId::INVINCIBLE, TypeId::HOSTILE, TypeId::VOID};
-const unordered_set<Vector2i, DirHasher> DIRECTIONS = {Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)};
+const unordered_set<Vector2i, DirHasher> DIRECTIONS_HFIRST = {Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)};
 const unordered_set<Vector2i, DirHasher> H_DIRS = {Vector2i(1, 0), Vector2i(-1, 0)};
 const unordered_set<Vector2i, DirHasher> V_DIRS = {Vector2i(0, 1), Vector2i(0, -1)};
 const unordered_map<uint8_t, int> MERGE_PRIORITIES = {{TypeId::PLAYER, 1}, {TypeId::INVINCIBLE, 3}, {TypeId::HOSTILE, 2}, {TypeId::VOID, 4}, {TypeId::REGULAR, 0}};
@@ -572,6 +572,10 @@ public:
     Array pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_cjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_cjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_cjpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
 
     //should starts/ends be same size?
     Array pathfind_ma(int search_id, int max_sa_depth, bool allow_type_change, Vector2i min, Vector2i max, vector<Vector2i> starts, vector<Vector2i> ends);

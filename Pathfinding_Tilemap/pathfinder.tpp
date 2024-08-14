@@ -44,7 +44,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
             continue;
         }
 
-        for (Vector2i dir : DIRECTIONS) {
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
