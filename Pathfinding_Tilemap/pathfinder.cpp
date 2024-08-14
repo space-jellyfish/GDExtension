@@ -1722,7 +1722,7 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
     return Array();
 }
 
-Array pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     open_sa_gsort_t open;
     closed_sa_t best_dists;
     Vector2i lv_end = end - min;
@@ -1793,15 +1793,15 @@ Array pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector2i min, Vect
     return Array();
 }
 
-Array pathfind_sa_cjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_cjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
 
 }
 
-Array pathfind_sa_cjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_cjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
 
 }
 
-Array pathfind_sa_cjpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_cjpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
 
 }
 
