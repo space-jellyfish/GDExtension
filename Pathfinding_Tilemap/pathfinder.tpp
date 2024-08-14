@@ -50,7 +50,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SAPISearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
+                shared_ptr<SAPISearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
 
                 if (!neighbor) {
                     continue;

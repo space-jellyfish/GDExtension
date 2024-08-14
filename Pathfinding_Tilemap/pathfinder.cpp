@@ -364,7 +364,7 @@ Vector2i get_normalized_dir(Vector3i action) {
 }
 
 Vector3i get_normalized_action(Vector3i action) {
-    if (action.z != ActionId::JUMP) {
+    if (action.z != ActionId::JUMP && action.z != ActionId::CONSTRAINED_JUMP) {
         return action;
     }
     return Vector3i(sgn(action.x), sgn(action.y), ActionId::SLIDE);
@@ -1062,7 +1062,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
 
                 if (!neighbor) {
                     continue;
@@ -1142,7 +1142,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vecto
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
                 //generate split in all dirs, don't generate slide if next tile is empty_and_regular
                 //generate jump iff next tile is empty_and_regular and dir is natural - handled in try_jump()
                 //only search in dir of natural neighbors (except first node) - handled via pruning
@@ -1150,7 +1150,7 @@ Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vecto
                     continue;
                 }
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
 
                 if (!neighbor) {
                     continue;
@@ -1219,7 +1219,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
 
                 if (!neighbor) {
                     continue;
@@ -1310,7 +1310,7 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
 
                 if (!neighbor) {
                     continue;
@@ -1385,7 +1385,7 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
 
                 if (!neighbor) {
                     continue;
@@ -1450,12 +1450,12 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vec
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
                 if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
                     continue;
                 }
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
 
                 if (!neighbor) {
                     continue;
@@ -1532,12 +1532,12 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
                 if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
                     continue;
                 }
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
 
                 if (!neighbor) {
                     continue;
@@ -1615,12 +1615,12 @@ Array Pathfinder::pathfind_sa_hbjpiadanr(int max_depth, bool allow_type_change, 
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::ACTION_END; ++action_id) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
                 if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
                     continue;
                 }
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
 
                 if (!neighbor) {
                     continue;
