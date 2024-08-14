@@ -449,7 +449,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
 
                 Vector3i normalized_next_action(next_dir.dir.x, next_dir.dir.y, action_id);
                 //this does not create any permanent refs to curr_jp->sanode, so it can be reused for the next curr_jp
-                shared_ptr<SASearchNode_t> neighbor = curr_jp->try_action(normalized_next_action, lv_end, allow_type_change, best_dists, false, *next_dir.max_scan_dist);
+                shared_ptr<SASearchNode_t> neighbor = curr_jp->try_action(normalized_next_action, lv_end, allow_type_change, best_dists, false, &next_dir.max_scan_dist);
                 if (neighbor) {
                     if (!horizontal || next_dir.dir == dir || next_dir.blocked || action_id != ActionId::SLIDE || neighbor->prev_push_count) {
                         ans = curr_jp;
