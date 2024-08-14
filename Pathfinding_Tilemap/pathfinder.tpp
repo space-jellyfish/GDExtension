@@ -94,7 +94,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
 }
 
 template <typename RadiusGetter>
-void Pathfinder::path_informed_hbjpmda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius) {
+void Pathfinder::path_informed_jpmda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius) {
 
 }
 

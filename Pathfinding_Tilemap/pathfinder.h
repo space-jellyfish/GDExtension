@@ -79,21 +79,34 @@ enum ColorId {
 
 enum SASearchId {
 	DIJKSTRA,
-    HBJPD, //horizontally biased jump point dijkstra
 	MDA, //manhattan distance astar
     IADA, //inconsistent abstract distance astar
     IADANR, //* no re-expansion
-    HBJPMDA,
-    HBJPIADA,
-    HBJPIADANR,
     IWDMDA, //iterative widening diamond *
-    IWDHBJPMDA,
     IWSMDA, //iterative widening square *
-    IWSHBJPMDA,
     SAIWDMDA, //simulated annealing *
-    SAIWDHBJPMDA,
     SAIWSMDA,
-    SAIWSHBJPMDA,
+
+    //jps
+    JPD, //(horizontally biased) jump point dijkstra
+    JPMDA,
+    JPIADA,
+    JPIADANR,
+    IWDJPMDA,
+    IWSJPMDA,
+    SAIWDJPMDA,
+    SAIWSJPMDA,
+
+    //cjps
+    CJPD, //* constrained *
+    CJPMDA,
+    CJPIADA,
+    CJPIADANR,
+    IWDCJPMDA,
+    IWSCJPMDA,
+    SAIWDCJPMDA,
+    SAIWSCJPMDA,
+
 	//IDA/EPEA, QUANT, FMT/RRT
     SEARCH_END,
 };
@@ -551,14 +564,14 @@ public:
     void reset_sa_cumulative_search_times();
     Array pathfind_sa(int search_id, int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_iada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
-    Array pathfind_sa_hbjpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
     Array pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
+    Array pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end);
 
     //should starts/ends be same size?
     Array pathfind_ma(int search_id, int max_sa_depth, bool allow_type_change, Vector2i min, Vector2i max, vector<Vector2i> starts, vector<Vector2i> ends);
@@ -575,7 +588,7 @@ public:
     template <typename RadiusGetter>
     void path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius);
     template <typename RadiusGetter>
-    void path_informed_hbjpmda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius);
+    void path_informed_jpmda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius);
     int get_h_reduction(int virtual_path_index, bool sim_anneal);
 
     //move back to global scope once testing is done

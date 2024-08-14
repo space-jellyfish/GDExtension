@@ -980,9 +980,6 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, bool allow_type_chan
         case SASearchId::DIJKSTRA:
             ans = pathfind_sa_dijkstra(max_depth, allow_type_change, min, max, start, end);
             break;
-        case SASearchId::HBJPD:
-            ans = pathfind_sa_hbjpd(max_depth, allow_type_change, min, max, start, end);
-            break;
         case SASearchId::MDA:
             ans = pathfind_sa_mda(max_depth, allow_type_change, min, max, start, end);
             break;
@@ -992,20 +989,23 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, bool allow_type_chan
         case SASearchId::IADANR:
             ans = pathfind_sa_iadanr(max_depth, allow_type_change, min, max, start, end);
             break;
-        case SASearchId::HBJPMDA:
-            ans = pathfind_sa_hbjpmda(max_depth, allow_type_change, min, max, start, end);
-            break;
-        case SASearchId::HBJPIADA:
-            ans = pathfind_sa_hbjpiada(max_depth, allow_type_change, min, max, start, end);
-            break;
-        case SASearchId::HBJPIADANR:
-            ans = pathfind_sa_hbjpiadanr(max_depth, allow_type_change, min, max, start, end);
-            break;
         case SASearchId::IWDMDA:
             ans = pathfind_sa_iwdmda(max_depth, allow_type_change, min, max, start, end);
             break;
+        case SASearchId::JPD:
+            ans = pathfind_sa_jpd(max_depth, allow_type_change, min, max, start, end);
+            break;
+        case SASearchId::JPMDA:
+            ans = pathfind_sa_jpmda(max_depth, allow_type_change, min, max, start, end);
+            break;
+        case SASearchId::JPIADA:
+            ans = pathfind_sa_jpiada(max_depth, allow_type_change, min, max, start, end);
+            break;
+        case SASearchId::JPIADANR:
+            ans = pathfind_sa_jpiadanr(max_depth, allow_type_change, min, max, start, end);
+            break;
         default:
-            ans = pathfind_sa_hbjpd(max_depth, allow_type_change, min, max, start, end);
+            break;
     }
 
     //timing
@@ -1105,78 +1105,6 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
                 open.push(neighbor);
                 best_dists.insert(neighbor);
             }
-        }
-    }
-    return Array();
-}
-
-//open and best_dists not necessarily optimal
-Array Pathfinder::pathfind_sa_hbjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    open_sa_gsort_t open;
-    closed_sa_t best_dists;
-    Vector2i lv_end = end - min;
-
-    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
-    first->init_sanode(min, max, start);
-    open.push(first);
-    best_dists.insert(first);
-
-    while (!open.empty()) {
-        shared_ptr<SASearchNode> curr = open.top();
-
-        if (curr->sanode->lv_pos + min == end) {
-            return curr->trace_path_normalized_actions(curr->g);
-        }
-        //open may receive duplicate nodes (see Pictures/jpd_edge_case)
-        open.pop();
-        if (curr != *best_dists.find(curr)) {
-            continue;
-        }
-
-        //branch prediction makes this relatively quick, so check max_depth when both expanding and generating (unless it is redundant)
-        if (curr->g == max_depth) {
-            continue;
-        }
-
-        for (Vector2i dir : DIRECTIONS) {
-            if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
-                continue;
-            }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
-                //generate split in all dirs, don't generate slide if next tile is empty_and_regular
-                //generate jump iff next tile is empty_and_regular and dir is natural - handled in try_jump()
-                //only search in dir of natural neighbors (except first node) - handled via pruning
-                if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
-                    continue;
-                }
-                Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
-
-                if (!neighbor) {
-                    continue;
-                }
-                neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
-
-                //place check here to catch nodes that exceed max_depth as early as possible
-                //since open << closed for typical search, generating check is not much more expensive than expanding check
-                if (neighbor->g > max_depth) {
-                    continue;
-                }
-
-                auto it = best_dists.find(neighbor);
-                if (it != best_dists.end()) {
-                    if (neighbor->g >= (*it)->g) {
-                        continue;
-                    }
-                    else {
-                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g);
-                        best_dists.erase(it);
-                    }
-                }
-                open.push(neighbor);
-                best_dists.insert(neighbor);
-            }  
         }
     }
     return Array();
@@ -1416,8 +1344,135 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
     return Array();
 }
 
+//idea: iteratively widening diamond; ignore tiles outside of diamond when searching to obtain a path that informs search in the next iteration
+//iwd SANodes should preserve all back_ids, even ones outside the diamond
+//only use path from the previous iteration bc older iterations' paths are less relevant
+    //using all paths would case uneven reduction biased towards nodes near the goal
+//only check for h_reduction if within prev_radius + 1 of dest
+//not optimal bc path-informed heuristic is inconsistent
+//allow reduction to negative h? yes
+//use manhattan_dist bc iw + iada would be too inaccurate
+
+//apply proportional h_reduction to nodes within same path? ONE
+    //higher h_reduction for nodes with higher virtual_path_index, since they have more validation
+//use base h_reduction proportional to pathlen/manhattan_radius_of_shape since larger radius is harder? TWO
+    //NEEDS PROFILING (both speed and suboptimality); this makes path near start more suboptimal than path near goal (might be good?)
+//for simulated annealing version, choose random h_reduction from an interval? THREE
+    //use greater lower bound and smaller range for nodes with higher virtual_path_index
+
+//use a reduced h_reduction if upcoming location in path has been affected?
+    //NAH, largest_affected_path_index update in path_informed_mda() accounts for pushing that occurs in prev_path
+//for multi-agent version, iwd SANodes are reusable
+//if an iterative search ends with no valid path found, don't update any heuristics in the next iteration
+//if prev iteration has multiple optimal paths, use all of them? NAH, prioritize speed
+
+//assume start != end (otherwise there are duplicate init_lv_ttid() calls)
+Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    //don't skip the radius = 0 search (there could be walls)
+    int manhattan_dist_to_end = manhattan_dist(start, end);
+    int radius = 0;
+    Vector2i lv_end = end - min;
+    RadiusGetterDiamond get_radius(lv_end);
+    BoundsChecker check_bounds(min, max);
+
+    shared_ptr<SANode> shape_sanode = make_shared<SANode>();
+    shape_sanode->set_lv_pos(start - min);
+    shape_sanode->init_lv_back_ids(min, max);
+    shape_sanode->init_lv_ttid(shape_sanode->lv_pos, start);
+    unique_ptr<PathInfo> pi = make_unique<PathInfo>();
+
+    //enclosed goal check (radius == -1, no tile_id at dest)
+    path_informed_mda(max_depth, false, shape_sanode, lv_end, pi, false, false, 0, get_radius);
+    if (!pi->normalized_actions.size()) {
+        return Array();
+    }
+    shape_sanode->init_lv_ttid(lv_end, end);
+
+    while (radius < manhattan_dist_to_end - 1) {
+        path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, false, radius, get_radius);
+        ++radius;
+        shape_sanode->widen_diamond(min, end, radius, check_bounds);
+    }
+    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, false, radius, get_radius);
+    shape_sanode->fill_complement(min, max, radius, get_radius);
+    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, false, false, 0, get_radius); //radius is DONT_CARE
+    return pi->normalized_actions;
+}
+
+//open and best_dists not necessarily optimal
+Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    open_sa_gsort_t open;
+    closed_sa_t best_dists;
+    Vector2i lv_end = end - min;
+
+    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    first->init_sanode(min, max, start);
+    open.push(first);
+    best_dists.insert(first);
+
+    while (!open.empty()) {
+        shared_ptr<SASearchNode> curr = open.top();
+
+        if (curr->sanode->lv_pos + min == end) {
+            return curr->trace_path_normalized_actions(curr->g);
+        }
+        //open may receive duplicate nodes (see Pictures/jpd_edge_case)
+        open.pop();
+        if (curr != *best_dists.find(curr)) {
+            continue;
+        }
+
+        //branch prediction makes this relatively quick, so check max_depth when both expanding and generating (unless it is redundant)
+        if (curr->g == max_depth) {
+            continue;
+        }
+
+        for (Vector2i dir : DIRECTIONS) {
+            if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
+                continue;
+            }
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
+                //generate split in all dirs, don't generate slide if next tile is empty_and_regular
+                //generate jump iff next tile is empty_and_regular and dir is natural - handled in try_jump()
+                //only search in dir of natural neighbors (except first node) - handled via pruning
+                if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
+                    continue;
+                }
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
+
+                if (!neighbor) {
+                    continue;
+                }
+                neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
+
+                //place check here to catch nodes that exceed max_depth as early as possible
+                //since open << closed for typical search, generating check is not much more expensive than expanding check
+                if (neighbor->g > max_depth) {
+                    continue;
+                }
+
+                auto it = best_dists.find(neighbor);
+                if (it != best_dists.end()) {
+                    if (neighbor->g >= (*it)->g) {
+                        continue;
+                    }
+                    else {
+                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
+                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g);
+                        best_dists.erase(it);
+                    }
+                }
+                open.push(neighbor);
+                best_dists.insert(neighbor);
+            }  
+        }
+    }
+    return Array();
+}
+
 //closed optimal, open and best_dists not
-Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     open_sa_fsort_t open;
     closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
@@ -1492,7 +1547,7 @@ Array Pathfinder::pathfind_sa_hbjpmda(int max_depth, bool allow_type_change, Vec
 
 //open and returned path are not necessarily optimal
 //if h(first) == numeric_limits<int>::max(), exit early bc no path exists
-Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     open_sa_fsort_t open;
     closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
@@ -1571,7 +1626,7 @@ Array Pathfinder::pathfind_sa_hbjpiada(int max_depth, bool allow_type_change, Ve
     return Array();
 }
 
-Array Pathfinder::pathfind_sa_hbjpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     open_sa_fsort_t open;
     closed_sa_t closed;
     closed_sa_t best_dists; //to prevent duplicate nodes with equal or worse cost from being pushed to open
@@ -1655,61 +1710,6 @@ Array Pathfinder::pathfind_sa_hbjpiadanr(int max_depth, bool allow_type_change, 
     return Array();
 }
 
-//idea: iteratively widening diamond; ignore tiles outside of diamond when searching to obtain a path that informs search in the next iteration
-//iwd SANodes should preserve all back_ids, even ones outside the diamond
-//only use path from the previous iteration bc older iterations' paths are less relevant
-    //using all paths would case uneven reduction biased towards nodes near the goal
-//only check for h_reduction if within prev_radius + 1 of dest
-//not optimal bc path-informed heuristic is inconsistent
-//allow reduction to negative h? yes
-//use manhattan_dist bc iw + iada would be too inaccurate
-
-//apply proportional h_reduction to nodes within same path? ONE
-    //higher h_reduction for nodes with higher virtual_path_index, since they have more validation
-//use base h_reduction proportional to pathlen/manhattan_radius_of_shape since larger radius is harder? TWO
-    //NEEDS PROFILING (both speed and suboptimality); this makes path near start more suboptimal than path near goal (might be good?)
-//for simulated annealing version, choose random h_reduction from an interval? THREE
-    //use greater lower bound and smaller range for nodes with higher virtual_path_index
-
-//use a reduced h_reduction if upcoming location in path has been affected?
-    //NAH, largest_affected_path_index update in path_informed_mda() accounts for pushing that occurs in prev_path
-//for multi-agent version, iwd SANodes are reusable
-//if an iterative search ends with no valid path found, don't update any heuristics in the next iteration
-//if prev iteration has multiple optimal paths, use all of them? NAH, prioritize speed
-
-//assume start != end (otherwise there are duplicate init_lv_ttid() calls)
-Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    //don't skip the radius = 0 search (there could be walls)
-    int manhattan_dist_to_end = manhattan_dist(start, end);
-    int radius = 0;
-    Vector2i lv_end = end - min;
-    RadiusGetterDiamond get_radius(lv_end);
-    BoundsChecker check_bounds(min, max);
-
-    shared_ptr<SANode> shape_sanode = make_shared<SANode>();
-    shape_sanode->set_lv_pos(start - min);
-    shape_sanode->init_lv_back_ids(min, max);
-    shape_sanode->init_lv_ttid(shape_sanode->lv_pos, start);
-    unique_ptr<PathInfo> pi = make_unique<PathInfo>();
-
-    //enclosed goal check (radius == -1, no tile_id at dest)
-    path_informed_mda(max_depth, false, shape_sanode, lv_end, pi, false, false, 0, get_radius);
-    if (!pi->normalized_actions.size()) {
-        return Array();
-    }
-    shape_sanode->init_lv_ttid(lv_end, end);
-
-    while (radius < manhattan_dist_to_end - 1) {
-        path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, false, radius, get_radius);
-        ++radius;
-        shape_sanode->widen_diamond(min, end, radius, check_bounds);
-    }
-    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, false, radius, get_radius);
-    shape_sanode->fill_complement(min, max, radius, get_radius);
-    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, false, false, 0, get_radius); //radius is DONT_CARE
-    return pi->normalized_actions;
-}
-
 void Pathfinder::set_player_pos(Vector2i pos) {
     player_pos = pos;
 }
@@ -1764,7 +1764,7 @@ bool Pathfinder::is_immediately_trapped(Vector2i pos) {
 }
 
 //use sanode to avoid calling get_back_id(pos) unnecessarily
-//use hbjpmda bc without tiles, hbjp is faster
+//use jpmda bc without tiles, jp is faster
 bool Pathfinder::is_goal_enclosed(shared_ptr<SANode> env, Vector2i lv_end) {
     priority_queue<EnclosureNode, vector<EnclosureNode>, EnclosureNodeComparer> open;
     vector<vector<int>> best_dists = vector<vector<int>>(env->lv.size(), std::vector<int>(env->lv[0].size(), 0));
