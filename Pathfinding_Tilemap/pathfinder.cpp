@@ -1426,11 +1426,14 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
     first->init_sanode(min, max, start);
     open.push(first);
     best_dists.insert(first);
+    int debug = 0;
 
     while (!open.empty()) {
         shared_ptr<SASearchNode> curr = open.top();
+        ++debug;
 
         if (curr->sanode->lv_pos + min == end) {
+            UtilityFunctions::print("JPD expanded ", debug, " nodes");
             return curr->trace_path_normalized_actions(curr->g);
         }
         //open may receive duplicate nodes (see Pictures/jpd_edge_case)
@@ -1736,11 +1739,14 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
     first->init_sanode(min, max, start);
     open.push(first);
     best_dists.insert(first);
+    int debug = 0;
 
     while (!open.empty()) {
         shared_ptr<SASearchNode> curr = open.top();
+        ++debug;
 
         if (curr->sanode->lv_pos + min == end) {
+            UtilityFunctions::print("CJPD expanded ", debug, " nodes");
             return curr->trace_path_normalized_actions(curr->g);
         }
         //open may receive duplicate nodes (see Pictures/jpd_edge_case)

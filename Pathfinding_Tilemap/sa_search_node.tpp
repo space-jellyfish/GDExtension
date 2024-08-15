@@ -69,7 +69,6 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
         SANeighbor neighbor = (*it).second;
 
         if (!ignore_prune && neighbor.unprune_threshold) {
-            UtilityFunctions::print("action ", normalized_action, " from ", sanode->lv_pos, " pruned");
             //pruned or action invalid
             return nullptr;
         }
@@ -361,7 +360,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
     shared_ptr<SASearchNode_t> curr_jp;
     shared_ptr<SASearchNode_t> ans;
     int max_jump_dist = max_scan_dist ? min(*max_scan_dist, dist_to_lv_edge) : dist_to_lv_edge;
-    UtilityFunctions::print("max_jump_dist from ", sanode->lv_pos, " in dir ", dir, ": ", max_jump_dist);
+    //UtilityFunctions::print("max_jump_dist from ", sanode->lv_pos, " in dir ", dir, ": ", max_jump_dist);
 
     while (curr_dist <= max_jump_dist) {
         //get current jump point; reuse sanode if possible
