@@ -69,6 +69,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
         SANeighbor neighbor = (*it).second;
 
         if (!ignore_prune && neighbor.unprune_threshold) {
+            UtilityFunctions::print("action ", normalized_action, " from ", sanode->lv_pos, " pruned");
             //pruned or action invalid
             return nullptr;
         }
@@ -87,6 +88,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
             return ans;
         }
     }
+    //assert(!(ignore_prune && normalized_action.z == ActionId::CONSTRAINED_JUMP));
 
     Vector2i dir(normalized_action.x, normalized_action.y);
     shared_ptr<SASearchNode_t> ans;
@@ -330,7 +332,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
             if (!horizontal) {
                 Vector3i normalized_perp_jump(next_dir.x, next_dir.y, ActionId::CONSTRAINED_JUMP);
                 auto neib_it = neighbors.find(normalized_perp_jump);
-                if (neib_it != neighbors.end()) {
+                if (neib_it != neighbors.end() && (*neib_it).second.sanode) {
                     //use try_action() to construct a shared_ptr<SASearchNode_t> to use as key to best_dists to get g_v to calculate d (ignoring prune)
                     //this should not cause infinite recursion, since try_action() does not call try_constrained_jump()
                     shared_ptr<SASearchNode_t> v = try_action(normalized_perp_jump, lv_end, allow_type_change, best_dists, true, nullptr);
@@ -355,7 +357,8 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
 
     shared_ptr<SASearchNode_t> curr_jp;
     shared_ptr<SASearchNode_t> ans;
-    int max_jump_dist = max_scan_dist ? *max_scan_dist : dist_to_lv_edge;
+    int max_jump_dist = max_scan_dist ? min(*max_scan_dist, dist_to_lv_edge) : dist_to_lv_edge;
+    UtilityFunctions::print("max_jump_dist from ", sanode->lv_pos, " in dir ", dir, ": ", max_jump_dist);
 
     while (curr_dist <= max_jump_dist) {
         //get current jump point; reuse sanode if possible
@@ -594,7 +597,7 @@ Array SASearchNodeBase<SASearchNode_t>::trace_path_normalized_actions(int path_l
 //validated node - a node inside shape, or the immediate parent of final re-entry into shape
 //critical node - node where agent tile_id must match in order to follow prev path
 //admissible tile_id - (while following prev path) agent tile_id that will coincide with that of prev_path at the next
-    //critical node (if there are any upcoming) if optimal slide/split decisions are made at non-critical nodes
+    //critical node (if there are any upcoming) if optimal slide/split decisions are made
 
 //idea: do h_reduction if tile_id is admissible and upcoming locations in path have not been disturbed (visited or push-affected)
 //i.e. apply to all SANodes that are guaranteed to be following prev path, if decision between slide/split is allowed at non-critical nodes

@@ -228,12 +228,16 @@ bool is_eff_merge(uint16_t src_stuff_id, uint16_t dest_stuff_id) {
 
 //assume type_ids valid
 bool is_type_preserved(uint8_t src_type_id, uint8_t dest_type_id) {
+    //assert(src_type_id >= 0 && src_type_id <= TypeId::REGULAR);
+    //assert(dest_type_id >= 0 && dest_type_id <= TypeId::REGULAR);
     return MERGE_PRIORITIES.at(src_type_id) >= MERGE_PRIORITIES.at(dest_type_id);
 }
 
 //assume type_ids valid
 //equivalent to !is_type_preserved(dest_type_id, src_type_id)
 bool is_type_dominant(uint8_t src_type_id, uint8_t dest_type_id) {
+    //assert(src_type_id >= 0 && src_type_id <= TypeId::REGULAR);
+    //assert(dest_type_id >= 0 && dest_type_id <= TypeId::REGULAR);
     return MERGE_PRIORITIES.at(src_type_id) > MERGE_PRIORITIES.at(dest_type_id);
 }
 
@@ -678,6 +682,7 @@ void SANode::set_lv_sid(Vector2i _lv_pos, uint16_t new_sid) {
     uint8_t new_tile_id = get_tile_id(new_sid);
     uint8_t old_type_id = get_type_id(old_sid);
     uint8_t new_type_id = get_type_id(new_sid);
+    //assert(new_type_id >= 0 && new_type_id <= TypeId::REGULAR);
 
     if (old_type_id < TypeId::REGULAR) {
         hash ^= type_id_hash_keys[_lv_pos.y][_lv_pos.x][old_type_id];
@@ -1787,7 +1792,7 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
                 }
                 open.push(neighbor);
                 best_dists.insert(neighbor);
-            }  
+            }
         }
     }
     return Array();
