@@ -1620,7 +1620,7 @@ Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vect
                 neighbor->f = neighbor->g + neighbor->h;
 
                 if (neighbor->g > max_depth) {
-                    curr->neighbors[normalized_action] = {neighbor->g - max_depth, neighbor->sanode, neighbor->prev_push_count}; //prune neighbor in case curr generates again
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->g - max_depth), neighbor->sanode, neighbor->prev_push_count}; //prune neighbor in case curr generates again
                     continue;
                 }
 

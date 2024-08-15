@@ -266,7 +266,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
                     }
                     else {
                         //horizontal, perp, not blocked, slide, self merges
-                        curr_jp->neighbors[normalized_next_action] = {1, neighbor, 0};
+                        curr_jp->neighbors[normalized_next_action] = {1, neighbor->sanode, 0};
                     }
                 }
                 if (ans) {
@@ -463,7 +463,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
                     }
                     else {
                         //horizontal, perp, not blocked, slide, self merges
-                        curr_jp->neighbors[normalized_next_action] = {1, neighbor, 0};
+                        curr_jp->neighbors[normalized_next_action] = {1, neighbor->sanode, 0};
                     }
                 }
                 if (ans) {
