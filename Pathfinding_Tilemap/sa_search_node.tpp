@@ -182,6 +182,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
             }
             else {
                 //found better path, declare curr_jp as jump point
+                //search function handles neighbor transfer
                 return curr_jp;
             }
         }
@@ -264,7 +265,8 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
                         ans = curr_jp;
                     }
                     else {
-                        curr_jp->neighbors[normalized_next_action] = {1, nullptr, 0};
+                        //horizontal, perp, not blocked, slide, self merges
+                        curr_jp->neighbors[normalized_next_action] = {1, neighbor, 0};
                     }
                 }
                 if (ans) {
@@ -335,6 +337,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
                 if (neib_it != neighbors.end() && (*neib_it).second.sanode) {
                     //use try_action() to construct a shared_ptr<SASearchNode_t> to use as key to best_dists to get g_v to calculate d (ignoring prune)
                     //this should not cause infinite recursion, since try_action() does not call try_constrained_jump()
+                    //if neighbor sanode is nullptr, normalized_perp_jump is either vertical or invalid => don't add constraint
                     shared_ptr<SASearchNode_t> v = try_action(normalized_perp_jump, lv_end, allow_type_change, best_dists, true, nullptr);
                     auto bd_it = best_dists.find(v);
                     if (bd_it != best_dists.end()) {
@@ -376,6 +379,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
             }
             else {
                 //found better path, declare curr_jp as jump point
+                //search function handles neighbor transfer
                 return curr_jp;
             }
         }
@@ -458,7 +462,8 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
                         ans = curr_jp;
                     }
                     else {
-                        curr_jp->neighbors[normalized_next_action] = {1, nullptr, 0};
+                        //horizontal, perp, not blocked, slide, self merges
+                        curr_jp->neighbors[normalized_next_action] = {1, neighbor, 0};
                     }
                 }
                 if (ans) {
