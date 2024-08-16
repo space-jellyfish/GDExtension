@@ -274,7 +274,8 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
             }
 
             //update blocked
-            next_dir.blocked = !(next_empty_and_regular && next_compatible);
+            //assume next is compatible
+            next_dir.blocked = !next_empty_and_regular;
         }
         //check ans
         if (ans) {
@@ -344,9 +345,6 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
                         int dist_av = manhattan_dist(sanode->lv_pos, v->sanode->lv_pos);
                         int d = g + dist_av - (*bd_it)->g;
                         perp_max_scan_dist = dist_av - (d + 1) / 2;
-                        if (perp_max_scan_dist == 0) {
-                            UtilityFunctions::print("lv_pos ", sanode->lv_pos, " perp_dir ", next_dir, " max_scan_dist init to 0");
-                        }
                     }
                     //else gv = ga + |av|, no constraint
                 }
@@ -363,7 +361,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
     shared_ptr<SASearchNode_t> curr_jp;
     shared_ptr<SASearchNode_t> ans;
     int max_jump_dist = max_scan_dist ? min(*max_scan_dist, dist_to_lv_edge) : dist_to_lv_edge;
-    UtilityFunctions::print("max_jump_dist from ", sanode->lv_pos, " in dir ", dir, ": ", max_jump_dist);
+    //UtilityFunctions::print("max_jump_dist from ", sanode->lv_pos, " in dir ", dir, ": ", max_jump_dist);
 
     while (curr_dist <= max_jump_dist) {
         //get current jump point; reuse sanode if possible
@@ -415,8 +413,9 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
             //compatibility check
             if (!next_compatible) {
                 curr_jp->prune_invalid_action_ids(next_dir.dir);
-                //update blocked
+                //update blocked, max_scan_dist
                 next_dir.blocked = true;
+                next_dir.max_scan_dist = numeric_limits<int>::max();
                 continue;
             }
 
@@ -473,8 +472,12 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
                 }
             }
 
-            //update blocked
-            next_dir.blocked = !(next_empty_and_regular && next_compatible);
+            //update blocked, max_scan_dist
+            //assume next is compatible
+            next_dir.blocked = !next_empty_and_regular;
+            if (next_dir.blocked) {
+                next_dir.max_scan_dist = numeric_limits<int>::max();
+            }
         }
         //check ans
         if (ans) {
@@ -517,6 +520,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::get_jump_point(shar
     //(see Pictures/reverse_jump_unprune_threshold, Pictures/prev_is_not_reverse_jump_in_general, JPS pruning rules)
     //don't use unprune_threshold = numeric_limits<unsigned int>::max() (see Pictures/jps_needs_unpruning)
     ans->neighbors[Vector3i(-dir.x, -dir.y, action_id)] = {3, nullptr, 0};
+    //ans->neighbors[Vector3i(-dir.x, -dir.y, action_id)] = {2 * jump_dist + 1, sanode, 0};
 
     return ans;
 }

@@ -1798,7 +1798,6 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
                 }
                 open.push(neighbor);
                 best_dists.insert(neighbor);
-                UtilityFunctions::print("add jump point at ", neighbor->sanode->lv_pos);
             }
         }
     }
