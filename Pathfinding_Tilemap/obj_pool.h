@@ -8,6 +8,9 @@ template <typename T>
 class ObjectPool {
 public:
     void init(int n) {
+        if (!pool.empty()) {
+            return;
+        }
         pool.reserve(n);
         for (int i = 0; i < n; ++i) {
             pool.push_back(std::make_shared<T>());

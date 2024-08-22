@@ -584,6 +584,9 @@ public:
     void set_tilemap(TileMap* t);
     void set_tile_push_limits(Dictionary tpls);
     void generate_hash_keys();
+    void init_sa_pool(int n);
+    void init_sapi_pool(int n);
+    void init_sanode_pool(int n);
 
     bool is_immediately_trapped(Vector2i pos);
     bool is_goal_enclosed(shared_ptr<SANode> env, Vector2i lv_end);
@@ -631,8 +634,8 @@ extern unordered_map<uint8_t, int> tile_push_limits; //type_id, tpl
 extern unordered_map<Vector2i, RRDIADLists, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, rrd lists
 extern unordered_map<Vector2i, RRDCADLists, Vector2iHasher> consistent_abstract_dists; //goal_pos, rrd lists
 extern array<double, SASearchId::SEARCH_END> sa_cumulative_search_times; //search_id, cumulative time (ms)
-extern ObjectPool<SASearchNodeBase<SASearchNode>> sa_search_node_pool;
-extern ObjectPool<SASearchNodeBase<SAPISearchNode>> sapi_search_node_pool;
+extern ObjectPool<SASearchNodeBase<SASearchNode>> sa_pool;
+extern ObjectPool<SASearchNodeBase<SAPISearchNode>> sapi_pool;
 extern ObjectPool<SANode> sanode_pool;
 
 //templated implementations
