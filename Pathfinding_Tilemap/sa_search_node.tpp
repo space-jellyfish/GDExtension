@@ -87,7 +87,6 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
             return ans;
         }
     }
-    //assert(!(ignore_prune && normalized_action.z == ActionId::CONSTRAINED_JUMP));
 
     Vector2i dir(normalized_action.x, normalized_action.y);
     shared_ptr<SASearchNode_t> ans;
@@ -102,7 +101,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
             ans = try_jump(dir, lv_end, allow_type_change, best_dists);
             break;
         case ActionId::CONSTRAINED_JUMP:
-            ans = try_constrained_jump(dir, lv_end, allow_type_change, best_dists, max_constrained_jump_scan_dist);
+            ans = try_constrained_jump(dir, lv_end, allow_type_change, best_dists, ignore_prune, max_constrained_jump_scan_dist);
             break;
         default:
             break;
@@ -142,7 +141,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
     bool next_obstructed = false;
 
     //init next_dirs
-    bool horizontal = (H_DIRS.find(dir) != H_DIRS.end());
+    bool horizontal = (dir.x != 0);
     array<NextDir, 3> next_dirs;
     auto next_dirs_itr = next_dirs.begin();
     Vector2i perp_dir1 = horizontal ? Vector2i(0, 1) : Vector2i(1, 0);
@@ -166,6 +165,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
     shared_ptr<SASearchNode_t> ans;
 
     while (curr_dist <= dist_to_lv_edge) {
+        //UtilityFunctions::print("scan node");
         //get current jump point; reuse sanode if possible
         shared_ptr<SANode> prev_sanode = (curr_dist > 1) ? curr_jp->sanode : nullptr;
         curr_jp = get_jump_point(prev_sanode, dir, curr_pos, curr_dist, ActionId::JUMP);
@@ -301,7 +301,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
 //return a_i when jp found; constraint is effectively updated when a_i continues the vertical jump
 template <typename SASearchNode_t>
 template <typename BestDists_t>
-shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists, int* max_scan_dist) {
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists, bool ignore_prune, int* max_scan_dist) {
     //check bounds NAH, pathfind_sa*() checks while generating
     //check obstruction
     uint8_t src_type_id = get_type_id(sanode->get_lv_sid(sanode->lv_pos));
@@ -316,7 +316,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
     bool next_obstructed = false;
 
     //init next_dirs
-    bool horizontal = (H_DIRS.find(dir) != H_DIRS.end());
+    bool horizontal = (dir.x != 0);
     array<NextDirConstrained, 3> next_dirs;
     auto next_dirs_itr = next_dirs.begin();
     Vector2i perp_dir1 = horizontal ? Vector2i(0, 1) : Vector2i(1, 0);
@@ -333,12 +333,11 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
             int perp_max_scan_dist = numeric_limits<int>::max();
             if (!horizontal) {
                 Vector3i normalized_perp_jump(next_dir.x, next_dir.y, ActionId::CONSTRAINED_JUMP);
-                auto neib_it = neighbors.find(normalized_perp_jump);
-                if (neib_it != neighbors.end() && (*neib_it).second.sanode) {
-                    //use try_action() to construct a shared_ptr<SASearchNode_t> to use as key to best_dists to get g_v to calculate d (ignoring prune)
-                    //this should not cause infinite recursion, since try_action() does not call try_constrained_jump()
-                    //if neighbor sanode is nullptr, normalized_perp_jump is either vertical or invalid => don't add constraint
-                    shared_ptr<SASearchNode_t> v = try_action(normalized_perp_jump, lv_end, allow_type_change, best_dists, true, nullptr);
+
+                //get hjump point to use as key to best_dists to get g_v to calculate d (ignoring prune)
+                //this should not cause infinite recursion since horizontal cjump doesn't call cjump
+                shared_ptr<SASearchNode_t> v = try_action(normalized_perp_jump, lv_end, allow_type_change, best_dists, true, nullptr);
+                if (v) {
                     auto bd_it = best_dists.find(v);
                     if (bd_it != best_dists.end()) {
                         //v->g is default-init to 0, calculate |av| manually
@@ -349,7 +348,6 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
                     //else gv = ga + |av|, no constraint
                 }
             }
-
             *next_dirs_itr = NextDirConstrained(next_dir, true, blocked, perp_max_scan_dist);
         }
         ++next_dirs_itr;
@@ -361,9 +359,9 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
     shared_ptr<SASearchNode_t> curr_jp;
     shared_ptr<SASearchNode_t> ans;
     int max_jump_dist = max_scan_dist ? min(*max_scan_dist, dist_to_lv_edge) : dist_to_lv_edge;
-    //UtilityFunctions::print("max_jump_dist from ", sanode->lv_pos, " in dir ", dir, ": ", max_jump_dist);
 
     while (curr_dist <= max_jump_dist) {
+        //UtilityFunctions::print("scan node");
         //get current jump point; reuse sanode if possible
         shared_ptr<SANode> prev_sanode = (curr_dist > 1) ? curr_jp->sanode : nullptr;
         curr_jp = get_jump_point(prev_sanode, dir, curr_pos, curr_dist, ActionId::CONSTRAINED_JUMP);
@@ -373,9 +371,11 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
         if (it != best_dists.end()) {
             int curr_g = g + curr_dist;
             if ((*it)->g <= curr_g) {
-                //see Pictures/node_along_jump_that_is_visited_with_better_g_handles_remainder_of_jump
-                transfer_neighbors(*it, curr_g - (*it)->g);
-                return nullptr;
+                if (!ignore_prune) {
+                    //see Pictures/node_along_jump_that_is_visited_with_better_g_handles_remainder_of_jump
+                    transfer_neighbors(*it, curr_g - (*it)->g);
+                    return nullptr;
+                }
             }
             else {
                 //found better path, declare curr_jp as jump point

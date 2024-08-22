@@ -526,3 +526,33 @@ void SANode::set_lv_ttid(Vector2i _lv_pos, uint8_t type_id, uint8_t tile_id) {
     lv[_lv_pos.y][_lv_pos.x] = make_stuff_id(get_back_id(old_sid), type_id, tile_id);
 }
 */
+
+//if neighbor sanode is nullptr, normalized_perp_jump is either vertical or invalid => don't add constraint
+//assert(!(ignore_prune && normalized_action.z == ActionId::CONSTRAINED_JUMP));
+
+/*
+const unordered_set<Vector2i, DirHasher> H_DIRS = {Vector2i(1, 0), Vector2i(-1, 0)};
+const unordered_set<Vector2i, DirHasher> V_DIRS = {Vector2i(0, 1), Vector2i(0, -1)};
+*/
+
+/*
+    int debug = max_scan_dist ? *max_scan_dist : -1;
+    if (ignore_prune) {
+        UtilityFunctions::print("\tcjump from ", sanode->lv_pos, " in ", dir, " started (msd = ", debug, ")");
+    }
+    else {
+        UtilityFunctions::print("cjump from ", sanode->lv_pos, " in ", dir, " started (msd = ", debug, ")");
+    }
+
+                        if (sanode->lv_pos == Vector2i(4, 4) && dir == Vector2i(0, 1) && next_dir == Vector2i(-1, 0))
+                            UtilityFunctions::print("g: ", g, " dist_av: ", dist_av, " vg: ", (*bd_it)->g, " pmsd: ", perp_max_scan_dist);
+
+    if (sanode->lv_pos == Vector2i(4, 4) && dir == Vector2i(-1, 0)) {
+        int msd = max_scan_dist ? *max_scan_dist : -1;
+        UtilityFunctions::print("max_jump_dist from ", sanode->lv_pos, " in ", dir, ": ", max_jump_dist, " (msd = ", msd, ")");
+    }
+
+                if (action_id == ActionId::CONSTRAINED_JUMP) {
+                    UtilityFunctions::print("secondary cjump from ", curr_pos, " in ", next_dir.dir, " (primary from ", sanode->lv_pos, " in ", dir, ")");
+                }
+*/

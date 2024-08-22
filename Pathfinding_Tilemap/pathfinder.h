@@ -10,6 +10,7 @@
 #include <unordered_set>
 #include <set>
 #include <queue>
+#include "obj_pool.h"
 
 using namespace std;
 using namespace godot;
@@ -171,9 +172,7 @@ struct ActionHasher {
 const unordered_set<uint8_t> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
 const unordered_set<uint8_t> B_SAVE_OR_GOAL = {BackId::SAVEPOINT, BackId::GOAL};
 const unordered_set<uint8_t> T_ENEMY = {TypeId::INVINCIBLE, TypeId::HOSTILE, TypeId::VOID};
-const unordered_set<Vector2i, DirHasher> DIRECTIONS_HFIRST = {Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)};
-const unordered_set<Vector2i, DirHasher> H_DIRS = {Vector2i(1, 0), Vector2i(-1, 0)};
-const unordered_set<Vector2i, DirHasher> V_DIRS = {Vector2i(0, 1), Vector2i(0, -1)};
+const vector<Vector2i> DIRECTIONS_HFIRST = {Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)};
 const unordered_map<uint8_t, int> MERGE_PRIORITIES = {{TypeId::PLAYER, 1}, {TypeId::INVINCIBLE, 3}, {TypeId::HOSTILE, 2}, {TypeId::VOID, 4}, {TypeId::REGULAR, 0}};
 const int HASH_KEY_GENERATOR_SEED = 2050;
 const int TILE_POW_MAX = 14;
@@ -475,7 +474,7 @@ struct SASearchNodeBase : public enable_shared_from_this<SASearchNodeBase<SASear
     template <typename BestDists_t>
     shared_ptr<SASearchNode_t> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists);
     template <typename BestDists_t>
-    shared_ptr<SASearchNode_t> try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists, int* max_scan_dist);
+    shared_ptr<SASearchNode_t> try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists, bool ignore_prune, int* max_scan_dist);
     shared_ptr<SASearchNode_t> get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist, int action_id);
     void prune_invalid_action_ids(Vector2i dir);
     void prune_backtrack(Vector2i dir);
@@ -632,6 +631,9 @@ extern unordered_map<uint8_t, int> tile_push_limits; //type_id, tpl
 extern unordered_map<Vector2i, RRDIADLists, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, rrd lists
 extern unordered_map<Vector2i, RRDCADLists, Vector2iHasher> consistent_abstract_dists; //goal_pos, rrd lists
 extern array<double, SASearchId::SEARCH_END> sa_cumulative_search_times; //search_id, cumulative time (ms)
+extern ObjectPool<SASearchNodeBase<SASearchNode>> sa_search_node_pool;
+extern ObjectPool<SASearchNodeBase<SAPISearchNode>> sapi_search_node_pool;
+extern ObjectPool<SANode> sanode_pool;
 
 //templated implementations
 #include "sanode.tpp"

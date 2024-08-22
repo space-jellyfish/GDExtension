@@ -54,7 +54,7 @@ EnclosureNode EnclosureNode::jump(Vector2i dir, shared_ptr<SANode> env, uint8_t 
 
     //init next_dirs
     array<NextDir, 2> next_dirs;
-    bool horizontal = (H_DIRS.find(dir) != H_DIRS.end());
+    bool horizontal = (dir.x != 0);
     Vector2i perp_dir1 = horizontal ? Vector2i(0, 1) : Vector2i(1, 0);
     Vector2i perp_dir2 = horizontal ? Vector2i(0, -1) : Vector2i(-1, 0);
     auto next_dirs_itr = next_dirs.begin();
@@ -1743,6 +1743,7 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
 
     while (!open.empty()) {
         shared_ptr<SASearchNode> curr = open.top();
+        UtilityFunctions::print("expanding ", curr->sanode->lv_pos);
         ++debug;
 
         if (curr->sanode->lv_pos + min == end) {
@@ -1798,6 +1799,7 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
                 }
                 open.push(neighbor);
                 best_dists.insert(neighbor);
+                UtilityFunctions::print("added ", neighbor->sanode->lv_pos);
             }
         }
     }
