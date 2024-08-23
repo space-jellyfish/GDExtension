@@ -634,9 +634,7 @@ extern unordered_map<uint8_t, int> tile_push_limits; //type_id, tpl
 extern unordered_map<Vector2i, RRDIADLists, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, rrd lists
 extern unordered_map<Vector2i, RRDCADLists, Vector2iHasher> consistent_abstract_dists; //goal_pos, rrd lists
 extern array<double, SASearchId::SEARCH_END> sa_cumulative_search_times; //search_id, cumulative time (ms)
-extern ObjectPool<SASearchNodeBase<SASearchNode>> sa_pool;
-extern ObjectPool<SASearchNodeBase<SAPISearchNode>> sapi_pool;
-extern ObjectPool<SANode> sanode_pool;
+extern MultiTypeObjectPool node_pool;
 
 //templated implementations
 #include "sanode.tpp"

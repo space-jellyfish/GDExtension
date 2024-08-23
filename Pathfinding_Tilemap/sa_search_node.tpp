@@ -10,7 +10,7 @@
 
 template <typename SASearchNode_t>
 void SASearchNodeBase<SASearchNode_t>::init_sanode(Vector2i min, Vector2i max, Vector2i start) {
-    sanode = make_shared<SANode>();
+    sanode = node_pool.acquire<SANode>();
     sanode->init_lv_pos(start - min);
     sanode->init_lv(min, max);
 }
@@ -20,8 +20,9 @@ template <typename SASearchNode_t>
 shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_slide(Vector2i dir, bool allow_type_change) {
     int push_count = sanode->get_slide_push_count(dir, allow_type_change);
     if (push_count != -1) {
-        shared_ptr<SASearchNode_t> m = make_shared<SASearchNode_t>();
-        m->sanode = make_shared<SANode>(*sanode);
+        shared_ptr<SASearchNode_t> m = node_pool.acquire<SASearchNode_t>();
+        m->sanode = node_pool.acquire<SANode>();
+        *(m->sanode) = SANode(*sanode);
         m->prev = static_pointer_cast<SASearchNode_t>(this->shared_from_this());
         m->prev_push_count = push_count;
         m->prune_backtrack(dir);
@@ -73,7 +74,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
             return nullptr;
         }
         if (neighbor.sanode) {
-            shared_ptr<SASearchNode_t> ans = make_shared<SASearchNode_t>();
+            shared_ptr<SASearchNode_t> ans = node_pool.acquire<SASearchNode_t>();
             ans->sanode = neighbor.sanode;
             if (normalized_action.z == ActionId::JUMP || normalized_action.z == ActionId::CONSTRAINED_JUMP) {
                 unsigned int jump_dist = manhattan_dist(sanode->lv_pos, ans->sanode->lv_pos);
@@ -502,8 +503,14 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
 //assume jp_pos is within bounds
 template <typename SASearchNode_t>
 shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist, int action_id) {
-    shared_ptr<SASearchNode_t> ans = make_shared<SASearchNode_t>();
-    ans->sanode = prev_sanode ? prev_sanode : make_shared<SANode>(*sanode);
+    shared_ptr<SASearchNode_t> ans = node_pool.acquire<SASearchNode_t>();
+    if (prev_sanode) {
+        ans->sanode = prev_sanode;
+    }
+    else {
+        ans->sanode = node_pool.acquire<SANode>();
+        *(ans->sanode) = SANode(*sanode);
+    }
     Vector2i src_lv_pos = ans->sanode->lv_pos;
     ans->sanode->set_lv_pos(jp_pos);
     ans->sanode->set_lv_sid(jp_pos, get_jumped_stuff_id(ans->sanode->get_lv_sid(src_lv_pos), ans->sanode->get_lv_sid(jp_pos)));

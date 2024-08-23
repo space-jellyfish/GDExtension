@@ -556,3 +556,43 @@ const unordered_set<Vector2i, DirHasher> V_DIRS = {Vector2i(0, 1), Vector2i(0, -
                     UtilityFunctions::print("secondary cjump from ", curr_pos, " in ", next_dir.dir, " (primary from ", sanode->lv_pos, " in ", dir, ")");
                 }
 */
+
+/*
+template <typename T>
+class ObjectPool {
+public:
+    void init(int n) {
+        if (!pool.empty()) {
+            return;
+        }
+        pool.reserve(n);
+        for (int i = 0; i < n; ++i) {
+            pool.push_back(std::make_shared<T>());
+        }
+    }
+
+    std::shared_ptr<T> acquire() {
+        if (!pool.empty()) {
+            auto obj = pool.back();
+            pool.pop_back();
+            return obj;
+        } else {
+            return std::make_shared<T>();
+        }
+    }
+
+    void release(std::shared_ptr<T> obj) {
+        pool.push_back(obj);
+    }
+
+private:
+    std::vector<std::shared_ptr<T>> pool;
+};
+
+extern ObjectPool<SASearchNodeBase<SASearchNode>> sa_pool;
+extern ObjectPool<SASearchNodeBase<SAPISearchNode>> sapi_pool;
+extern ObjectPool<SANode> sanode_pool;
+
+m->sanode = make_shared<SANode>(*sanode);
+ans->sanode = prev_sanode ? prev_sanode : make_shared<SANode>(*sanode);
+*/

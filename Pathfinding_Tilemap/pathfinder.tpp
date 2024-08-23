@@ -15,7 +15,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
     open_sapi_fsort_t open;
     closed_sapi_t best_dists;
 
-    shared_ptr<SAPISearchNode> first = make_shared<SAPISearchNode>();
+    shared_ptr<SAPISearchNode> first = node_pool.acquire<SAPISearchNode>();
     first->sanode = start;
     first->h = manhattan_dist(start->lv_pos, lv_end);
     first->f = first->h;

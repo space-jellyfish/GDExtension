@@ -19,9 +19,7 @@ unordered_map<uint8_t, int> tile_push_limits;
 unordered_map<Vector2i, RRDIADLists, Vector2iHasher> inconsistent_abstract_dists; //goal_pos, rrd lists
 unordered_map<Vector2i, RRDCADLists, Vector2iHasher> consistent_abstract_dists; //goal_pos, rrd lists
 array<double, SASearchId::SEARCH_END> sa_cumulative_search_times{}; //search_id, cumulative time (ms); value-init to zero
-ObjectPool<SASearchNodeBase<SASearchNode>> sa_pool;
-ObjectPool<SASearchNodeBase<SAPISearchNode>> sapi_pool;
-ObjectPool<SANode> sanode_pool;
+MultiTypeObjectPool node_pool;
 
 void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_player_pos", "pos"), &Pathfinder::set_player_pos);
@@ -1056,7 +1054,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
     closed_sa_t best_dists;
     Vector2i lv_end = end - min;
 
-    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     //first can have prev_action and prev_push_count uninitialized
     open.push(first);
@@ -1140,7 +1138,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
     closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
 
-    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     first->h = manhattan_dist(first->sanode->lv_pos, lv_end);
     first->f = first->h;
@@ -1226,7 +1224,7 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
     uint8_t agent_type_id = get_type_id(start);
     rrd_init_iad(end);
 
-    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     first->h = rrd_resume_iad(end, start, agent_type_id);
 
@@ -1298,7 +1296,7 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
     uint8_t agent_type_id = get_type_id(start);
     rrd_init_iad(end);
 
-    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     first->h = rrd_resume_iad(end, start, agent_type_id);
 
@@ -1398,7 +1396,7 @@ Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vect
     RadiusGetterDiamond get_radius(lv_end);
     BoundsChecker check_bounds(min, max);
 
-    shared_ptr<SANode> shape_sanode = make_shared<SANode>();
+    shared_ptr<SANode> shape_sanode = node_pool.acquire<SANode>();
     shape_sanode->set_lv_pos(start - min);
     shape_sanode->init_lv_back_ids(min, max);
     shape_sanode->init_lv_ttid(shape_sanode->lv_pos, start);
@@ -1428,7 +1426,7 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
     closed_sa_t best_dists;
     Vector2i lv_end = end - min;
 
-    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     open.push(first);
     best_dists.insert(first);
@@ -1503,7 +1501,7 @@ Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vecto
     closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
     Vector2i lv_end = end - min;
 
-    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     first->h = manhattan_dist(first->sanode->lv_pos, lv_end);
     first->f = first->h;
@@ -1580,7 +1578,7 @@ Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vect
     uint8_t agent_type_id = get_type_id(start);
     rrd_init_iad(end);
 
-    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     first->h = rrd_resume_iad(end, start, agent_type_id);
 
@@ -1660,7 +1658,7 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
     uint8_t agent_type_id = get_type_id(start);
     rrd_init_iad(end);
 
-    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     first->h = rrd_resume_iad(end, start, agent_type_id);
 
@@ -1741,7 +1739,7 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
     closed_sa_t best_dists;
     Vector2i lv_end = end - min;
 
-    shared_ptr<SASearchNode> first = make_shared<SASearchNode>();
+    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     open.push(first);
     best_dists.insert(first);
@@ -1874,15 +1872,15 @@ void Pathfinder::generate_hash_keys() {
 }
 
 void init_sa_pool(int n) {
-    sa_pool.init(n);
+    node_pool.init<SASearchNode>(n);
 }
 
 void init_sapi_pool(int n) {
-    sapi_pool.init(n);
+    node_pool.init<SAPISearchNode>(n);
 }
 
 void init_sanode_pool(int n) {
-    sanode_pool.init(n);
+    node_pool.init<SANode>(n);
 }
 
 bool Pathfinder::is_immediately_trapped(Vector2i pos) {
