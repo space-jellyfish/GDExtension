@@ -3,7 +3,9 @@
 #define OBJ_POOL_HPP
 
 #include <stack>
+#include <memory>
 #include <typeindex>
+#include <any>
 
 
 class MultiTypeObjectPool {
@@ -14,7 +16,6 @@ public:
         if (!pool.empty()) {
             return;
         }
-        pool.reserve(n);
         for (int i = 0; i < n; ++i) {
             pool.push(std::make_shared<T>());
         }
@@ -35,10 +36,21 @@ public:
     template <typename T>
     void release(std::shared_ptr<T> obj) {
         auto& pool = getPool<T>();
-        pool.push(obj);
+        pool.push(std::move(obj));
     }
 
 private:
+    template <typename T>
+    std::stack<std::shared_ptr<T>>& getPool() {
+        auto typeId = std::type_index(typeid(T));
+        if (pools.find(typeId) == pools.end()) {
+            pools[typeId] = std::make_any<std::stack<std::shared_ptr<T>>>();
+        }
+        return std::any_cast<std::stack<std::shared_ptr<T>>&>(pools[typeId]);
+    }
+
+    std::unordered_map<std::type_index, std::any> pools;
+/*
     template <typename T>
     std::stack<std::shared_ptr<T>>& getPool() {
         auto typeId = std::type_index(typeid(T));
@@ -49,6 +61,7 @@ private:
     }
 
     std::unordered_map<std::type_index, std::unique_ptr<void>> pools;
+*/
 };
 
 #endif
