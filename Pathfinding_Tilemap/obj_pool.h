@@ -1,6 +1,9 @@
-//see https://stackoverflow.com/questions/27827923/c-object-pool-that-provides-items-as-smart-pointers-that-are-returned-to-pool
 #ifndef OBJ_POOL_HPP
 #define OBJ_POOL_HPP
+
+// see https://stackoverflow.com/questions/27827923/c-object-pool-that-provides-items-as-smart-pointers-that-are-returned-to-pool
+// A templated and multi-type object pool class
+// Requires void T::reset(), which will be called when the object returns to the pool
 
 #include <stack>
 #include <memory>
@@ -18,7 +21,7 @@ public:
             return;
         }
         for (int i = 0; i < n; ++i) {
-            pool.push(std::shared_ptr<T>(static_cast<T*>(nullptr), Deleter(*this)));
+            pool.push(std::shared_ptr<T>(std::make_shared<T>(), Deleter(*this)));
         }
     }
     
@@ -31,7 +34,7 @@ public:
             assert(obj != nullptr);
             return std::move(obj);
         } else {
-            return std::shared_ptr<T>(static_cast<T*>(nullptr), Deleter(*this));
+            return std::shared_ptr<T>(std::make_shared<T>(), Deleter(*this));
         }
     }
 
@@ -47,7 +50,9 @@ private:
 
         template <typename T>
         void operator()(T* ptr) {
-            p.add(std::shared_ptr<T>(ptr, Deleter(*this)));
+            //reset object and return it to the pool
+            ptr->reset();
+            p.add(ptr);
         }
     private:
         MultiTypeObjectPool& p;

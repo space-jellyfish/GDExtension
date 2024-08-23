@@ -590,6 +590,12 @@ int manhattan_dist(Vector2i pos1, Vector2i pos2) {
 }
 
 
+void SANode::reset() {
+    //lv_pos is always init, no need to reset
+    lv.clear();
+    hash = 0;
+}
+
 //updates hash
 void SANode::init_lv_pos(Vector2i _lv_pos) {
     lv_pos = _lv_pos;
@@ -602,15 +608,14 @@ void SANode::init_lv_pos(Vector2i _lv_pos) {
 void SANode::init_lv(Vector2i min, Vector2i max)  {
     int height = max.y - min.y;
     int width = max.x - min.x;
-    lv.reserve(height);
+    lv.resize(height);
     Vector2i agent_pos = min + lv_pos;
     uint8_t agent_type_id = get_type_id(agent_pos);
     int agent_merge_priority = MERGE_PRIORITIES.at(agent_type_id);
 
     for (int y = min.y; y < max.y; ++y) {
         int lv_y = y - min.y;
-        vector<uint16_t> row;
-        row.reserve(width);
+        lv[lv_y].resize(width);
 
         for (int x = min.x; x < max.x; ++x) {
             int lv_x = x - min.x;
@@ -625,7 +630,7 @@ void SANode::init_lv(Vector2i min, Vector2i max)  {
             if (type_id != TypeId::REGULAR && !TRACK_KILLABLE_TYPES && pos != agent_pos && MERGE_PRIORITIES.at(type_id) <= agent_merge_priority) {
                 type_id = TypeId::REGULAR;
             }
-            row.push_back(make_stuff_id(get_back_id(pos), type_id, tile_id));
+            lv[lv_y][lv_x] = make_stuff_id(get_back_id(pos), type_id, tile_id);
 
             if (tile_id > TileId::EMPTY) {
                 hash ^= tile_id_hash_keys[lv_y][lv_x][tile_id-1];
@@ -634,7 +639,6 @@ void SANode::init_lv(Vector2i min, Vector2i max)  {
                 hash ^= type_id_hash_keys[lv_y][lv_x][type_id];
             }
         }
-        lv.push_back(move(row));
     }
 }
 
@@ -643,16 +647,15 @@ void SANode::init_lv_back_ids(Vector2i min, Vector2i max) {
     int height = max.y - min.y;
     int width = max.x - min.x;
     //lv = vector<vector<uint16_t>>(height, vector<uint16_t>(width, REGULAR_TYPE_BITS)); //not necessarily faster
-    lv.reserve(height);
+    lv.resize(height);
 
     for (int y = min.y; y < max.y; ++y) {
-        vector<uint16_t> row;
-        row.reserve(width);
+        int lv_y = y - min.y;
+        lv[lv_y].reserve(width);
 
         for (int x = min.x; x < max.x; ++x) {
-            row.push_back(make_back_bits(get_back_id(Vector2i(x, y))) + REGULAR_TYPE_BITS);
+            lv[lv_y].push_back(make_back_bits(get_back_id(Vector2i(x, y))) + REGULAR_TYPE_BITS);
         }
-        lv.push_back(move(row));
     }
 }
 
@@ -896,6 +899,12 @@ void SANode::widen_square(Vector2i min, Vector2i end, int new_radius, const Boun
     }
 }
 
+
+void SAPISearchNode::reset() {
+    SASearchNodeBase<SAPISearchNode>::reset();
+    largest_affected_path_index = 0;
+    virtual_path_index = -1;
+}
 
 //assume prev != nullptr
 //don't combine into try_action() since try_action() must work with SASearchNode

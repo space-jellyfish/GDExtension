@@ -389,7 +389,10 @@ struct SANode : public enable_shared_from_this<SANode> {
     Vector2i lv_pos;
     vector<vector<uint16_t>> lv;
     //zobrist; for fast equality check
-    uint64_t hash;
+    uint64_t hash = 0;
+
+    //called before release into object pool
+    void reset();
 
     //these should update hash
     void init_lv_pos(Vector2i _lv_pos);
@@ -456,7 +459,7 @@ struct SASearchNodeBase : public enable_shared_from_this<SASearchNodeBase<SASear
     //for backtracing
     shared_ptr<SASearchNode_t> prev = nullptr;
     Vector3i prev_action; //[x_displacement, y_displacement, action_id]
-    unsigned int prev_push_count = 0;
+    unsigned int prev_push_count;
     //to store intermediate results/prevent backtracking (perform_slide(), try_jump())
     //normalized_action, {unprune_threshold, neighbor_sanode, push_count}
     //if neighbor is invalid, unprune_threshold == numeric_limits<unsigned int>::max()
@@ -464,6 +467,9 @@ struct SASearchNodeBase : public enable_shared_from_this<SASearchNodeBase<SASear
     //nullptr is placeholder for prune, it doesn't indicate anything in particular (creating the SANode would be wasteful)
     //missing entry indicates unknown
     unordered_map<Vector3i, SANeighbor, ActionHasher> neighbors;
+
+    //called before release into object pool
+    virtual void reset();
 
     void init_sanode(Vector2i min, Vector2i max, Vector2i start);
     shared_ptr<SASearchNode_t> try_slide(Vector2i dir, bool allow_type_change);
@@ -495,6 +501,9 @@ struct SASearchNode : public SASearchNodeBase<SASearchNode> {};
 struct SAPISearchNode : public SASearchNodeBase<SAPISearchNode> {
     int largest_affected_path_index = 0;
     int virtual_path_index = -1;
+
+    //called before release into object pool
+    void reset() override;
 
     void init_lapi(unique_ptr<PathInfo>& pi, Vector2i dir);
     void update_lapi(std::set<int>* largest_prev_path_indices, int effective_largest_affected_path_index);

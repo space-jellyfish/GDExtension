@@ -9,6 +9,16 @@
 
 
 template <typename SASearchNode_t>
+void SASearchNodeBase<SASearchNode_t>::reset() {
+    sanode = nullptr;
+    g = 0;
+    h = 0;
+    f = 0;
+    prev = nullptr;
+    neighbors.clear();
+}
+
+template <typename SASearchNode_t>
 void SASearchNodeBase<SASearchNode_t>::init_sanode(Vector2i min, Vector2i max, Vector2i start) {
     sanode = node_pool.acquire<SANode>();
     sanode->init_lv_pos(start - min);

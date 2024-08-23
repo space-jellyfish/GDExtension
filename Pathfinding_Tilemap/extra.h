@@ -610,3 +610,31 @@ ans->sanode = prev_sanode ? prev_sanode : make_shared<SANode>(*sanode);
     std::unordered_map<std::type_index, std::unique_ptr<void>> pools;
     std::shared_ptr<T>(new T, [this](T* ptr){ add(std::shared_ptr<T>(ptr)); });
 */
+
+/* first is most trash
+v.reserve(height)
+for y {
+	vector<int> row;
+	row.reserve(width);
+	for x {
+		row.push_back(get_value(y, x));
+	}
+	v.push_back(std::move(row));
+}
+
+v.resize(height)
+for y {
+	v[y].reserve(width);
+	for x {
+		v[y].push_back(get_value(y, x));
+	}
+}
+
+v.resize(height)
+for y {
+	v[y].resize(width);
+	for x {
+		v[y][x] = get_value(y, x);
+	}
+}
+*/
