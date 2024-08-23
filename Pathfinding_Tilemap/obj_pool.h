@@ -18,7 +18,7 @@ public:
             return;
         }
         for (int i = 0; i < n; ++i) {
-            pool.push(std::make_shared<T>(nullptr, Deleter(*this)));
+            pool.push(std::shared_ptr<T>(static_cast<T*>(nullptr), Deleter(*this)));
         }
     }
     
@@ -31,7 +31,7 @@ public:
             assert(obj != nullptr);
             return std::move(obj);
         } else {
-            return std::make_shared<T>(nullptr, Deleter(*this));
+            return std::shared_ptr<T>(static_cast<T*>(nullptr), Deleter(*this));
         }
     }
 
