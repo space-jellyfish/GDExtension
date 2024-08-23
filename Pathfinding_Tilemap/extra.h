@@ -596,3 +596,17 @@ extern ObjectPool<SANode> sanode_pool;
 m->sanode = make_shared<SANode>(*sanode);
 ans->sanode = prev_sanode ? prev_sanode : make_shared<SANode>(*sanode);
 */
+
+ /*
+    template <typename T>
+    std::stack<std::shared_ptr<T>>& getPool() {
+        auto typeId = std::type_index(typeid(T));
+        if (pools.find(typeId) == pools.end()) {
+            pools[typeId] = std::make_unique<std::stack<std::shared_ptr<T>>>();
+        }
+        return *std::static_pointer_cast<std::stack<std::shared_ptr<T>>>(pools[typeId]);
+    }
+
+    std::unordered_map<std::type_index, std::unique_ptr<void>> pools;
+    std::shared_ptr<T>(new T, [this](T* ptr){ add(std::shared_ptr<T>(ptr)); });
+*/

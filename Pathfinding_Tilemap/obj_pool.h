@@ -6,6 +6,7 @@
 #include <memory>
 #include <typeindex>
 #include <any>
+#include <godot_cpp/variant/utility_functions.hpp>
 
 
 class MultiTypeObjectPool {
@@ -17,7 +18,7 @@ public:
             return;
         }
         for (int i = 0; i < n; ++i) {
-            pool.push(std::make_shared<T>());
+            pool.push(std::make_shared<T>(nullptr, Deleter(*this)));
         }
     }
     
@@ -27,19 +28,31 @@ public:
         if (!pool.empty()) {
             auto obj = pool.top();
             pool.pop();
-            return std::shared_ptr<T>(obj.get(), [this](T* ptr){ release(std::shared_ptr<T>(ptr)); });
+            assert(obj != nullptr);
+            return std::move(obj);
         } else {
-            return std::shared_ptr<T>(new T, [this](T* ptr){ release(std::shared_ptr<T>(ptr)); });
+            return std::make_shared<T>(nullptr, Deleter(*this));
         }
     }
 
     template <typename T>
-    void release(std::shared_ptr<T> obj) {
+    void add(std::shared_ptr<T> obj) {
         auto& pool = getPool<T>();
         pool.push(std::move(obj));
     }
 
 private:
+    struct Deleter {
+        Deleter(MultiTypeObjectPool& _p) : p(_p) {}
+
+        template <typename T>
+        void operator()(T* ptr) {
+            p.add(std::shared_ptr<T>(ptr, Deleter(*this)));
+        }
+    private:
+        MultiTypeObjectPool& p;
+    };
+
     template <typename T>
     std::stack<std::shared_ptr<T>>& getPool() {
         auto typeId = std::type_index(typeid(T));
@@ -50,18 +63,6 @@ private:
     }
 
     std::unordered_map<std::type_index, std::any> pools;
-/*
-    template <typename T>
-    std::stack<std::shared_ptr<T>>& getPool() {
-        auto typeId = std::type_index(typeid(T));
-        if (pools.find(typeId) == pools.end()) {
-            pools[typeId] = std::make_unique<std::stack<std::shared_ptr<T>>>();
-        }
-        return *std::static_pointer_cast<std::stack<std::shared_ptr<T>>>(pools[typeId]);
-    }
-
-    std::unordered_map<std::type_index, std::unique_ptr<void>> pools;
-*/
 };
 
 #endif

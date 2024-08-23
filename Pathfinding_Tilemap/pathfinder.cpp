@@ -1871,15 +1871,15 @@ void Pathfinder::generate_hash_keys() {
     generated = true;
 }
 
-void init_sa_pool(int n) {
+void Pathfinder::init_sa_pool(int n) {
     node_pool.init<SASearchNode>(n);
 }
 
-void init_sapi_pool(int n) {
+void Pathfinder::init_sapi_pool(int n) {
     node_pool.init<SAPISearchNode>(n);
 }
 
-void init_sanode_pool(int n) {
+void Pathfinder::init_sanode_pool(int n) {
     node_pool.init<SANode>(n);
 }
 
