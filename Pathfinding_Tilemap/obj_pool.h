@@ -21,7 +21,7 @@ public:
             return;
         }
         for (int i = 0; i < n; ++i) {
-            pool.push(std::shared_ptr<T>(std::make_shared<T>(), Deleter(*this)));
+            pool.push(std::shared_ptr<T>(new T, Deleter(*this)));
         }
     }
     
@@ -34,7 +34,7 @@ public:
             assert(obj != nullptr);
             return std::move(obj);
         } else {
-            return std::shared_ptr<T>(std::make_shared<T>(), Deleter(*this));
+            return std::shared_ptr<T>(new T, Deleter(*this));
         }
     }
 
@@ -52,7 +52,7 @@ private:
         void operator()(T* ptr) {
             //reset object and return it to the pool
             ptr->reset();
-            p.add(ptr);
+            p.add(std::shared_ptr<T>(ptr, Deleter(p)));
         }
     private:
         MultiTypeObjectPool& p;
