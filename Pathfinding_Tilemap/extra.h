@@ -638,3 +638,13 @@ for y {
 	}
 }
 */
+
+/*
+		if (first->f > second->f) {
+			return true;
+		}
+		if (first->f < second->f) {
+			return false;
+		}
+		return first->g < second->g;
+*/

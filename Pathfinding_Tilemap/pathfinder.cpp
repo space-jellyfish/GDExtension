@@ -1899,8 +1899,8 @@ bool Pathfinder::is_immediately_trapped(Vector2i pos) {
 //use sanode to avoid calling get_back_id(pos) unnecessarily
 //use jpmda bc without tiles, jp is faster
 bool Pathfinder::is_goal_enclosed(shared_ptr<SANode> env, Vector2i lv_end) {
-    priority_queue<EnclosureNode, vector<EnclosureNode>, EnclosureNodeComparer> open;
-    vector<vector<int>> best_dists = vector<vector<int>>(env->lv.size(), std::vector<int>(env->lv[0].size(), 0));
+    open_e_t open;
+    best_dist_t best_dists(env->lv.size(), std::vector<int>(env->lv[0].size(), 0));
 
     EnclosureNode first(lv_end);
     first.h = manhattan_dist(lv_end, env->lv_pos);

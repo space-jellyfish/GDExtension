@@ -11,6 +11,7 @@
 #include <set>
 #include <queue>
 #include "obj_pool.h"
+#include "OpenClosedList.h"
 
 using namespace std;
 using namespace godot;
@@ -261,6 +262,18 @@ struct IADNodeComparer {
 	}
 };
 
+struct IADNodeHasher {
+    uint64_t operator() (const IADNode& n) const {
+        return Vector2iHasher{}(n.pos);
+    }
+};
+
+struct IADNodeEquator {
+    bool operator() (const IADNode& first, const IADNode& second) const {
+        return first.pos == second.pos;
+    }
+};
+
 struct CADNode {
     Vector2i pos;
     int g;
@@ -441,13 +454,22 @@ struct EnclosureNode {
 
 struct EnclosureNodeComparer {
     bool operator() (const EnclosureNode& first, const EnclosureNode& second) const {
-        if (first.f > second.f) {
-            return true;
+        if (first.f == second.f) {
+            return first.g < second.g;
         }
-        if (first.f < second.f) {
-            return false;
-        }
-        return first.g < second.g;
+        return first.f > second.f;
+    }
+};
+
+struct EnclosureNodeHasher {
+    uint64_t operator() (const EnclosureNode& n) const {
+        return Vector2iHasher{}(n.lv_pos);
+    }
+};
+
+struct EnclosureNodeEquator {
+    bool operator() (const EnclosureNode& first, const EnclosureNode& second) const {
+        return first.lv_pos == second.lv_pos;
     }
 };
 
@@ -536,13 +558,10 @@ struct SASearchNodeBaseEquator {
 template <typename SASearchNode_t>
 struct SASearchNodeBaseFComparer {
 	bool operator() (const shared_ptr<SASearchNodeBase<SASearchNode_t>>& first, const shared_ptr<SASearchNodeBase<SASearchNode_t>>& second) {
-		if (first->f > second->f) {
-			return true;
-		}
-		if (first->f < second->f) {
-			return false;
-		}
-		return first->g < second->g;
+        if (first->f == second->f) {
+            return first->g < second->g;
+        }
+        return first->f > second->f;
 	}
 };
 
@@ -611,14 +630,21 @@ public:
     void rrd_clear_cad();
 };
 
-typedef priority_queue<IADNode, vector<IADNode>, IADNodeComparer> open_iad_t;
-typedef priority_queue<shared_ptr<CADNode>, vector<shared_ptr<CADNode>>, CADNodeComparer> open_cad_t;
+//typedef priority_queue<IADNode, vector<IADNode>, IADNodeComparer> open_iad_t;
+//typedef priority_queue<shared_ptr<CADNode>, vector<shared_ptr<CADNode>>, CADNodeComparer> open_cad_t;
+typedef OpenClosedList<IADNode, IADNodeHasher, IADNodeEquator, IADNodeComparer> open_iad_t;
+typedef OpenClosedList<shared_ptr<CADNode>, CADNodeHasher, CADNodeEquator, CADNodeComparer> open_cad_t;
 typedef unordered_set<shared_ptr<CADNode>, CADNodeHasher, CADNodeEquator> closed_cad_t;
-typedef unordered_map<Vector2i, int, Vector2iHasher> best_dist_t; //node_pos, best_g
-typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeBaseFComparer<SASearchNode>> open_sa_fsort_t;
-typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeBaseGComparer<SASearchNode>> open_sa_gsort_t;
+//typedef unordered_map<Vector2i, int, Vector2iHasher> best_dist_t; //node_pos, best_g
+typedef vector<vector<int>> best_dist_t; //[y, x], best_g
+typedef OpenClosedList<EnclosureNode, EnclosureNodeHasher, EnclosureNodeEquator, EnclosureNodeComparer> open_e_t;
+//typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeBaseFComparer<SASearchNode>> open_sa_fsort_t;
+//typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeBaseGComparer<SASearchNode>> open_sa_gsort_t;
+typedef OpenClosedList<shared_ptr<SASearchNode>, SASearchNodeBaseHashGetter<SASearchNode>, SASearchNodeBaseEquator<SASearchNode>, SASearchNodeBaseFComparer<SASearchNode>> open_sa_fsort_t;
+typedef OpenClosedList<shared_ptr<SASearchNode>, SASearchNodeBaseHashGetter<SASearchNode>, SASearchNodeBaseEquator<SASearchNode>, SASearchNodeBaseGComparer<SASearchNode>> open_sa_gsort_t;
 typedef unordered_set<shared_ptr<SASearchNode>, SASearchNodeBaseHashGetter<SASearchNode>, SASearchNodeBaseEquator<SASearchNode>> closed_sa_t;
-typedef priority_queue<shared_ptr<SAPISearchNode>, vector<shared_ptr<SAPISearchNode>>, SASearchNodeBaseFComparer<SAPISearchNode>> open_sapi_fsort_t;
+//typedef priority_queue<shared_ptr<SAPISearchNode>, vector<shared_ptr<SAPISearchNode>>, SASearchNodeBaseFComparer<SAPISearchNode>> open_sapi_fsort_t;
+typedef OpenClosedList<shared_ptr<SAPISearchNode>, SASearchNodeBaseHashGetter<SAPISearchNode>, SASearchNodeBaseEquator<SAPISearchNode>, SASearchNodeBaseFComparer<SAPISearchNode>> open_sapi_fsort_t;
 typedef unordered_set<shared_ptr<SAPISearchNode>, SASearchNodeBaseHashGetter<SAPISearchNode>, SASearchNodeBaseEquator<SAPISearchNode>> closed_sapi_t;
 
 struct RRDIADLists {
