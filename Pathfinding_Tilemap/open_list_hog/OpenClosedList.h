@@ -18,8 +18,9 @@
 #include <stdint.h>
 #include <unordered_map>
 
-/**
-* A simple Heap class.
+/*
+ * A simple Heap class.
+ * Requires OBJ to be default-constructible.
  */
 
 

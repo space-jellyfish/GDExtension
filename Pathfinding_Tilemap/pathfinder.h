@@ -253,6 +253,7 @@ struct IADNode {
     Vector2i pos;
     int g;
 
+    IADNode() {}
     IADNode(Vector2i _pos, int _g) : pos(_pos), g(_g) {}
 };
 
@@ -360,14 +361,14 @@ Vector3i get_normalized_action(Vector3i action);
 //if rrd finds that goal_pos is enclosed, return numeric_limits<int>::max() so pathfinder can exit early
 //inconsistent abstract distance
 //propagate h-cost using separation between tile_ids
-void rrd_init_iad(Vector2i goal_pos);
+void rrd_init_iad(Vector2i goal_pos, Vector2i closed_size);
 int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id);
 int get_action_iad(uint8_t src_tile_id, uint8_t dest_tile_id);
 int get_tile_id_sep(uint8_t tile_id1, uint8_t tile_id2);
 //consistent abstract distance
 //DEPRECATED, see Pictures/greedy_is_not_optimal_when_parsing_sequence
 //see extra.h for the idea
-void rrd_init_cad(Vector2i goal_pos);
+void rrd_init_cad(Vector2i goal_pos, Vector2i closed_size);
 int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos);
 int trace_cad(shared_ptr<CADNode> n);
 bool is_perp(Vector2i first, Vector2i second);
@@ -448,6 +449,7 @@ struct EnclosureNode {
     Vector2i lv_pos;
     int g=0, h=0, f=0;
 
+    EnclosureNode() {}
     EnclosureNode(Vector2i _lv_pos) : lv_pos(_lv_pos) {}
     EnclosureNode jump(Vector2i dir, shared_ptr<SANode> env, uint8_t agent_type_id);
 };
@@ -635,8 +637,8 @@ public:
 typedef OpenClosedList<IADNode, IADNodeHasher, IADNodeEquator, IADNodeComparer> open_iad_t;
 typedef OpenClosedList<shared_ptr<CADNode>, CADNodeHasher, CADNodeEquator, CADNodeComparer> open_cad_t;
 typedef unordered_set<shared_ptr<CADNode>, CADNodeHasher, CADNodeEquator> closed_cad_t;
-//typedef unordered_map<Vector2i, int, Vector2iHasher> best_dist_t; //node_pos, best_g
-typedef vector<vector<int>> best_dist_t; //[y, x], best_g
+typedef unordered_map<Vector2i, int, Vector2iHasher> best_dist_map_t; //node_pos, best_g
+typedef vector<vector<int>> best_dist_arr_t; //[y, x], best_g
 typedef OpenClosedList<EnclosureNode, EnclosureNodeHasher, EnclosureNodeEquator, EnclosureNodeComparer> open_e_t;
 //typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeBaseFComparer<SASearchNode>> open_sa_fsort_t;
 //typedef priority_queue<shared_ptr<SASearchNode>, vector<shared_ptr<SASearchNode>>, SASearchNodeBaseGComparer<SASearchNode>> open_sa_gsort_t;
@@ -649,14 +651,14 @@ typedef unordered_set<shared_ptr<SAPISearchNode>, SASearchNodeBaseHashGetter<SAP
 
 struct RRDIADLists {
     open_iad_t open;
-    best_dist_t closed;
-    best_dist_t best_gs;
+    best_dist_map_t closed; //use map bc arr cannot easily grow in all directions
+    best_dist_map_t best_gs;
 };
 
 struct RRDCADLists {
     open_cad_t open;
     closed_cad_t closed;
-    best_dist_t best_gs;
+    best_dist_map_t best_gs;
 };
 
 extern array<array<array<uint64_t, TILE_ID_COUNT - 1>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys;

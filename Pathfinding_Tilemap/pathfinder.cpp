@@ -386,7 +386,8 @@ void rrd_init_iad(Vector2i goal_pos) {
         return;
     }
     inconsistent_abstract_dists.emplace(make_pair(goal_pos, RRDIADLists{}));
-    inconsistent_abstract_dists[goal_pos].open.emplace(goal_pos, 0);
+    //inconsistent_abstract_dists[goal_pos].open.emplace(goal_pos, 0);
+    inconsistent_abstract_dists[goal_pos].open.Add(IADNode(goal_pos, 0));
     inconsistent_abstract_dists[goal_pos].best_gs.emplace(goal_pos, 0);
 }
 
@@ -411,7 +412,7 @@ int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id) {
         return (*it).second;
     }
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         IADNode n = open.top();
 
         //no duplicate generation occurs, see sa_dijkstra comment for justification
@@ -450,7 +451,7 @@ int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id) {
             if (it != best_gs.end() && (*it).second <= next_g) {
                 continue;
             }
-            open.emplace(next_pos, next_g);
+            open.Add(IADNode(next_pos, next_g));
             best_gs[next_pos] = next_g;
         }
     }
@@ -488,7 +489,7 @@ void rrd_init_cad(Vector2i goal_pos) {
         return;
     }
     consistent_abstract_dists.emplace(make_pair(goal_pos, RRDCADLists{}));
-    consistent_abstract_dists[goal_pos].open.emplace(make_shared<CADNode>(goal_pos, 0, nullptr, Vector2i(0, 0)));
+    consistent_abstract_dists[goal_pos].open.Add(make_shared<CADNode>(goal_pos, 0, nullptr, Vector2i(0, 0)));
     consistent_abstract_dists[goal_pos].best_gs.emplace(goal_pos, 0);
 }
 
@@ -510,7 +511,7 @@ int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
     }
     uint8_t agent_type_id = get_type_id(agent_pos);
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         shared_ptr<CADNode> curr = open.top();
 
         if (curr->g != best_gs[curr->pos]) {
@@ -545,7 +546,7 @@ int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
             if (it != best_gs.end() && (*it).second <= neighbor->g) {
                 continue;
             }
-            open.push(neighbor);
+            open.Add(neighbor);
             best_gs[next_pos] = neighbor->g;
         }
     }
@@ -1066,10 +1067,10 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
     shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     //first can have prev_action and prev_push_count uninitialized
-    open.push(first);
+    open.Add(first);
     best_dists.insert(first);
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         //expand node
         shared_ptr<SASearchNode> curr = open.top();
 
@@ -1132,7 +1133,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
                 neighbor->g = curr->g + 1;
 
                 //if neighbor hasn't been visited, it can't be ancestor of curr => no loop
-                open.push(neighbor);
+                open.Add(neighbor);
                 best_dists.insert(neighbor);
             }
         }
@@ -1152,10 +1153,10 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
     first->h = manhattan_dist(first->sanode->lv_pos, lv_end);
     first->f = first->h;
     //first can have prev_action and prev_push_count uninitialized
-    open.push(first);
+    open.Add(first);
     best_dists.insert(first);
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
@@ -1215,7 +1216,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
                     }
                 }
 
-                open.push(neighbor);
+                open.Add(neighbor);
                 best_dists.insert(neighbor);
             }
         }
@@ -1244,10 +1245,10 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
 
     first->f = first->h;
     //first can have prev_action and prev_push_count uninitialized
-    open.push(first);
+    open.Add(first);
     best_dists.insert(first);
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
@@ -1289,7 +1290,7 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
                         best_dists.erase(it);
                     }
                 }
-                open.push(neighbor);
+                open.Add(neighbor);
                 best_dists.insert(neighbor);
             }
         }
@@ -1316,10 +1317,10 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
 
     first->f = first->h;
     //first can have prev_action and prev_push_count uninitialized
-    open.push(first);
+    open.Add(first);
     best_dists.insert(first);
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
@@ -1366,7 +1367,7 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
                         best_dists.erase(it);
                     }
                 }
-                open.push(neighbor);
+                open.Add(neighbor);
                 best_dists.insert(neighbor);
             }
         }
@@ -1437,11 +1438,11 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
 
     shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
-    open.push(first);
+    open.Add(first);
     best_dists.insert(first);
     int debug = 0;
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
         ++debug;
 
@@ -1496,7 +1497,7 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
                         best_dists.erase(it);
                     }
                 }
-                open.push(neighbor);
+                open.Add(neighbor);
                 best_dists.insert(neighbor);
             }  
         }
@@ -1515,10 +1516,10 @@ Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vecto
     first->h = manhattan_dist(first->sanode->lv_pos, lv_end);
     first->f = first->h;
     //first can have prev_action and prev_push_count uninitialized
-    open.push(first);
+    open.Add(first);
     best_dists.insert(first);
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
@@ -1570,7 +1571,7 @@ Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vecto
                         best_dists.erase(it);
                     }
                 }
-                open.push(neighbor);
+                open.Add(neighbor);
                 best_dists.insert(neighbor);
             }
         }
@@ -1598,10 +1599,10 @@ Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vect
 
     first->f = first->h;
     //first can have prev_action and prev_push_count uninitialized
-    open.push(first);
+    open.Add(first);
     best_dists.insert(first);
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
@@ -1651,7 +1652,7 @@ Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vect
                         best_dists.erase(it);
                     }
                 }
-                open.push(neighbor);
+                open.Add(neighbor);
                 best_dists.insert(neighbor);
             }
         }
@@ -1678,10 +1679,10 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
 
     first->f = first->h;
     //first can have prev_action and prev_push_count uninitialized
-    open.push(first);
+    open.Add(first);
     best_dists.insert(first);
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
@@ -1735,7 +1736,7 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
                         best_dists.erase(it);
                     }
                 }
-                open.push(neighbor);
+                open.Add(neighbor);
                 best_dists.insert(neighbor);
             }
         }
@@ -1750,11 +1751,11 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
 
     shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
-    open.push(first);
+    open.Add(first);
     best_dists.insert(first);
     int debug = 0;
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
         UtilityFunctions::print("expanding ", curr->sanode->lv_pos);
         ++debug;
@@ -1810,7 +1811,7 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
                         best_dists.erase(it);
                     }
                 }
-                open.push(neighbor);
+                open.Add(neighbor);
                 best_dists.insert(neighbor);
                 UtilityFunctions::print("added ", neighbor->sanode->lv_pos);
             }
@@ -1900,15 +1901,15 @@ bool Pathfinder::is_immediately_trapped(Vector2i pos) {
 //use jpmda bc without tiles, jp is faster
 bool Pathfinder::is_goal_enclosed(shared_ptr<SANode> env, Vector2i lv_end) {
     open_e_t open;
-    best_dist_t best_dists(env->lv.size(), std::vector<int>(env->lv[0].size(), 0));
+    best_dist_arr_t best_dists(env->lv.size(), std::vector<int>(env->lv[0].size(), numeric_limits<int>::max()));
 
     EnclosureNode first(lv_end);
     first.h = manhattan_dist(lv_end, env->lv_pos);
     first.f = first.h;
-    open.push(first);
-    //best_dists[first.lv_pos.y][first.lv_pos.x] = 0;
+    open.Add(first);
+    best_dists[first.lv_pos.y][first.lv_pos.x] = 0;
 
-    while (!open.empty()) {
+    while (!open.Empty()) {
         EnclosureNode curr = open.top();
 
         if (curr.lv_pos == env->lv_pos) {
