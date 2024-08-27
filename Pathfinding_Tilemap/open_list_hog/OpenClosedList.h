@@ -20,7 +20,7 @@
 
 /*
  * A simple Heap class.
- * Requires OBJ to be default-constructible.
+ * Requires OBJ to be default-constructible, and default-constructed objects should be invalid.
  */
 
 

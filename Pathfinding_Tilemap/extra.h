@@ -648,3 +648,75 @@ for y {
 		}
 		return first->g < second->g;
 */
+
+/*
+        //no duplicate generation occurs, see sa_dijkstra comment for justification
+        if (n.g != best_gs[n.pos]) {
+            open.pop();
+            continue;
+        }
+*/
+
+        /*
+        //don't generate nodes exceeding max_depth
+        //check here bc depth increases in unit steps
+        if (n.depth == max_depth) {
+            continue;
+        }*/
+
+/*
+            auto it = best_gs.find(next_pos);
+            if (it != best_gs.end() && (*it).second <= next_g) {
+                continue;
+            }
+
+inconsistent_abstract_dists[goal_pos].best_gs.emplace(goal_pos, 0);
+*/
+
+        /*
+        //don't generate nodes exceeding max_depth
+        if (curr->depth == max_depth) {
+            continue;
+        }*/
+
+/*
+    //to prevent duplicate nodes with equal or worse cost from being pushed to open
+    //see CBS section 4.3, duplicate detection and pruning
+    //change to unordered_set<LightweightSANode> for less memory usage but no collision checking,
+    //where LightweightSANode only stores hash (for KeyEqual) and prev/prev_action (for trace_path())
+    //IMPORTANT: not the same as closed, bc (with the exception of DIJKSTRA) best_dists is non-optimal
+    //closed is redundant; shared_ptrs are stored in best_dists, so trace_path() will still work
+    closed_sa_t best_dists;
+
+    //best_dists check is unnecessary bc open doesn’t receive duplicate nodes
+    //assert(curr->g == (*best_dists.find(curr))->g);
+*/
+
+                //open doesn’t receive duplicate nodes -> every node generates at most once -> no need to push neighbor to sanode_ref_pool
+                //if closed optimal, no node generates more than once:
+                //assume closed optimal and a node generates more than once; then at some point node must be at top of open with best dist, and at some later point better path to node must be found
+                //"node at top of open" implies node is optimal, thus better path doesn't exist, contradiction
+
+                //check if neighbor is duplicate with equal or worse cost
+                //this is necessary since from
+                //0, 0, 0
+                //P1, 1, 1
+                //both {(1, 0, 0), (1, 0, 1), (0, -1, 1)} and {(0, -1, 0), (1, 0, 0), (1, 0, 0)} result in same node
+
+                    //neighbor is duplicate
+                    //if (neighbor->g >= (*it)->g) {
+                        //neighbor has equal or worse cost
+                        //continue;
+                    //}
+                    /* not possible bc open is optimal
+                    else {
+                        //use *it=neighbor (wrong syntax but i don't care) if neighbor path better, and curr!=best_dists.find(curr) in expanding best_dists check
+                        //this way curr!=best_dists.find(curr) implies curr is a duplicate node with equal or worse dist
+                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
+                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g); //so no neighbor info from better dist SASearchNodes is lost
+                        best_dists.erase(it);
+                    }*/
+//if neighbor hasn't been visited, it can't be ancestor of curr => no loop
+
+//closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+//neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open

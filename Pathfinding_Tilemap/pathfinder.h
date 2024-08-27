@@ -251,7 +251,7 @@ struct PathInfo {
 
 struct IADNode {
     Vector2i pos;
-    int g;
+    int g = -1;
 
     IADNode() {}
     IADNode(Vector2i _pos, int _g) : pos(_pos), g(_g) {}
@@ -498,13 +498,13 @@ struct SASearchNodeBase : public enable_shared_from_this<SASearchNodeBase<SASear
     void init_sanode(Vector2i min, Vector2i max, Vector2i start);
     shared_ptr<SASearchNode_t> try_slide(Vector2i dir, bool allow_type_change);
     shared_ptr<SASearchNode_t> try_split(Vector2i dir, bool allow_type_change);
-    template <typename BestDists_t>
-    shared_ptr<SASearchNode_t> try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists, bool ignore_prune, int* max_constrained_jump_scan_dist);
+    template <typename OpenList_t>
+    shared_ptr<SASearchNode_t> try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change, const OpenList_t& open, bool ignore_prune, int* max_constrained_jump_scan_dist);
 
-    template <typename BestDists_t>
-    shared_ptr<SASearchNode_t> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists);
-    template <typename BestDists_t>
-    shared_ptr<SASearchNode_t> try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const BestDists_t& best_dists, bool ignore_prune, int* max_scan_dist);
+    template <typename OpenList_t>
+    shared_ptr<SASearchNode_t> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const OpenList_t& open);
+    template <typename OpenList_t>
+    shared_ptr<SASearchNode_t> try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const OpenList_t& open, bool ignore_prune, int* max_scan_dist);
     shared_ptr<SASearchNode_t> get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist, int action_id);
     void prune_invalid_action_ids(Vector2i dir);
     void prune_backtrack(Vector2i dir);
@@ -652,13 +652,13 @@ typedef unordered_set<shared_ptr<SAPISearchNode>, SASearchNodeBaseHashGetter<SAP
 struct RRDIADLists {
     open_iad_t open;
     best_dist_map_t closed; //use map bc arr cannot easily grow in all directions
-    best_dist_map_t best_gs;
+    //best_dist_map_t best_gs;
 };
 
 struct RRDCADLists {
     open_cad_t open;
     closed_cad_t closed;
-    best_dist_map_t best_gs;
+    //best_dist_map_t best_gs;
 };
 
 extern array<array<array<uint64_t, TILE_ID_COUNT - 1>, MAX_SEARCH_WIDTH>, MAX_SEARCH_HEIGHT> tile_id_hash_keys;

@@ -13,16 +13,15 @@
 template <typename RadiusGetter>
 void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius) {
     open_sapi_fsort_t open;
-    closed_sapi_t best_dists;
+    closed_sapi_t closed;
 
     shared_ptr<SAPISearchNode> first = node_pool.acquire<SAPISearchNode>();
     first->sanode = start;
     first->h = manhattan_dist(start->lv_pos, lv_end);
     first->f = first->h;
-    open.push(first);
-    best_dists.insert(first);
+    open.Add(first);
     
-    while (!open.empty()) {
+    while (!open.Empty()) {
         shared_ptr<SAPISearchNode> curr = open.top();
 
         if (curr->sanode->lv_pos == lv_end) {
@@ -36,9 +35,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
             return;
         }
         open.pop();
-        if (curr != *best_dists.find(curr)) {
-            continue;
-        }
+        closed.insert(curr);
 
         if (curr->g == max_depth) {
             continue;
@@ -50,16 +47,23 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SAPISearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
+                shared_ptr<SAPISearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, open, false, nullptr);
 
                 if (!neighbor) {
                     continue;
                 }
+                if (closed.find(neighbor) != closed.end()) {
+                    continue;
+                }
                 neighbor->g = curr->g + 1;
                 neighbor->h = manhattan_dist(neighbor->sanode->lv_pos, lv_end);
-                neighbor->init_lapi(pi, dir);
+
+                if (neighbor->g + neighbor->h > max_depth) {
+                    continue;
+                }
 
                 //apply h_reduction
+                neighbor->init_lapi(pi, dir);
                 int virtual_path_index = neighbor->get_virtual_path_index(pi, neighbor->largest_affected_path_index);
                 if (virtual_path_index != -1) {
                     UtilityFunctions::print("h_reduction at ", neighbor->sanode->lv_pos, ", vpi = ", virtual_path_index);
@@ -68,24 +72,15 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
                 }
                 neighbor->f = neighbor->g + neighbor->h;
 
-                //reduced_f <= f <= true path_len
-                if (neighbor->f > max_depth) {
+                if (auto it = open.find(neighbor); it != nullptr) {
+                    if (neighbor->g < it->g) {
+                        neighbor->transfer_neighbors(it, it->g - neighbor->g);
+                        it->g = neighbor->g;
+                        open.DecreaseKey(it);
+                    }
                     continue;
                 }
-
-                auto it = best_dists.find(neighbor);
-                if (it != best_dists.end()) {
-                    if (neighbor->g >= (*it)->g) {
-                        continue;
-                    }
-                    else {
-                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g); //hs not necessarily equal
-                        best_dists.erase(it);
-                    }
-                }
-                open.push(neighbor);
-                best_dists.insert(neighbor);
+                open.Add(neighbor);
             }
         }
     }

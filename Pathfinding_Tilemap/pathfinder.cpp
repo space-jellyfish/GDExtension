@@ -388,7 +388,6 @@ void rrd_init_iad(Vector2i goal_pos) {
     inconsistent_abstract_dists.emplace(make_pair(goal_pos, RRDIADLists{}));
     //inconsistent_abstract_dists[goal_pos].open.emplace(goal_pos, 0);
     inconsistent_abstract_dists[goal_pos].open.Add(IADNode(goal_pos, 0));
-    inconsistent_abstract_dists[goal_pos].best_gs.emplace(goal_pos, 0);
 }
 
 //returns the inconsistent abstract distance from node to goal_pos
@@ -404,7 +403,7 @@ int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id) {
     //assert(inconsistent_abstract_dists.find(goal_pos) != inconsistent_abstract_dists.end());
 
     //check for stored ans; this requires closed bc best_dists not necessarily optimal
-    auto& [open, closed, best_gs] = inconsistent_abstract_dists[goal_pos];
+    auto& [open, closed] = inconsistent_abstract_dists[goal_pos];
     auto it = closed.find(node_pos);
     if (it != closed.end()) {
         //this requires closed to store best_dist
@@ -414,12 +413,6 @@ int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id) {
 
     while (!open.Empty()) {
         IADNode n = open.top();
-
-        //no duplicate generation occurs, see sa_dijkstra comment for justification
-        if (n.g != best_gs[n.pos]) {
-            open.pop();
-            continue;
-        }
         closed[n.pos] = n.g;
 
         if (n.pos == node_pos) {
@@ -431,13 +424,6 @@ int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id) {
         }
         open.pop();
 
-        /*
-        //don't generate nodes exceeding max_depth
-        //check here bc depth increases in unit steps
-        if (n.depth == max_depth) {
-            continue;
-        }*/
-
         uint8_t curr_tile_id = get_tile_id(n.pos);
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             Vector2i next_pos = n.pos + dir;
@@ -445,14 +431,24 @@ int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id) {
             if (!is_compatible(agent_type_id, get_back_id(next_pos))) {
                 continue;
             }
-            int next_g = n.g + get_action_iad(curr_tile_id, get_tile_id(next_pos));
-
-            auto it = best_gs.find(next_pos);
-            if (it != best_gs.end() && (*it).second <= next_g) {
+            //closed check
+            if (closed.find(next_pos) != closed.end()) {
                 continue;
             }
-            open.Add(IADNode(next_pos, next_g));
-            best_gs[next_pos] = next_g;
+
+            int next_g = n.g + get_action_iad(curr_tile_id, get_tile_id(next_pos));
+            IADNode next(next_pos, next_g);
+
+            //open check
+            IADNode it = open.find(next);
+            if (it.g != -1) {
+                if (next_g < it.g) {
+                    it.g = next_g;
+                    open.DecreaseKey(it);
+                }
+                continue;
+            }
+            open.Add(next);
         }
     }
     return numeric_limits<int>::max(); //unreachable
@@ -490,7 +486,6 @@ void rrd_init_cad(Vector2i goal_pos) {
     }
     consistent_abstract_dists.emplace(make_pair(goal_pos, RRDCADLists{}));
     consistent_abstract_dists[goal_pos].open.Add(make_shared<CADNode>(goal_pos, 0, nullptr, Vector2i(0, 0)));
-    consistent_abstract_dists[goal_pos].best_gs.emplace(goal_pos, 0);
 }
 
 //assume agent is compatible with goal_pos
@@ -503,7 +498,7 @@ int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
     //assert(consistent_abstract_dists.find(goal_pos) != consistent_abstract_dists.end());
 
     //check for stored ans
-    auto& [open, closed, best_gs] = consistent_abstract_dists[goal_pos];
+    auto& [open, closed] = consistent_abstract_dists[goal_pos];
     shared_ptr<CADNode> dest = make_shared<CADNode>(agent_pos, 0, nullptr, Vector2i(0, 0));
     auto it = closed.find(dest);
     if (it != closed.end()) {
@@ -513,11 +508,6 @@ int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
 
     while (!open.Empty()) {
         shared_ptr<CADNode> curr = open.top();
-
-        if (curr->g != best_gs[curr->pos]) {
-            open.pop();
-            continue;
-        }
         closed.insert(curr);
 
         if (curr->pos == agent_pos) {
@@ -527,12 +517,6 @@ int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
         }
         open.pop();
 
-        /*
-        //don't generate nodes exceeding max_depth
-        if (curr->depth == max_depth) {
-            continue;
-        }*/
-
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             Vector2i next_pos = curr->pos + dir;
 
@@ -540,14 +524,24 @@ int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
                 continue;
             }
             shared_ptr<CADNode> neighbor = make_shared<CADNode>(next_pos, 0, curr, dir);
+
+            //closed check
+            if (closed.find(neighbor) != closed.end()) {
+                continue;
+            }
+
             neighbor->g = trace_cad(neighbor);
 
-            auto it = best_gs.find(next_pos);
-            if (it != best_gs.end() && (*it).second <= neighbor->g) {
+            //open check
+            shared_ptr<CADNode> it = open.find(neighbor);
+            if (it != nullptr) {
+                if (neighbor->g < it->g) {
+                    it->g = neighbor->g;
+                    open.DecreaseKey(it);
+                }
                 continue;
             }
             open.Add(neighbor);
-            best_gs[next_pos] = neighbor->g;
         }
     }
     return numeric_limits<int>::max();
@@ -1036,7 +1030,7 @@ Array Pathfinder::pathfind_sa(int search_id, int max_depth, bool allow_type_chan
             ans = pathfind_sa_cjpiadanr(max_depth, allow_type_change, min, max, start, end);
             break;
         default:
-            break;
+            return ans;
     }
 
     //timing
@@ -1055,20 +1049,13 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
     //use ptrs bc prev requires a fixed addr, faster to copy
     //use shared_ptr instead of unique_ptr bc prev/neighbors also require it
     open_sa_gsort_t open;
-    //to prevent duplicate nodes with equal or worse cost from being pushed to open
-    //see CBS section 4.3, duplicate detection and pruning
-    //change to unordered_set<LightweightSANode> for less memory usage but no collision checking,
-    //where LightweightSANode only stores hash (for KeyEqual) and prev/prev_action (for trace_path())
-    //IMPORTANT: not the same as closed, bc (with the exception of DIJKSTRA) best_dists is non-optimal
-    //closed is redundant; shared_ptrs are stored in best_dists, so trace_path() will still work
-    closed_sa_t best_dists;
+    closed_sa_t closed;
     Vector2i lv_end = end - min;
 
     shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     //first can have prev_action and prev_push_count uninitialized
     open.Add(first);
-    best_dists.insert(first);
 
     while (!open.Empty()) {
         //expand node
@@ -1077,9 +1064,8 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
         if (curr->sanode->lv_pos == lv_end) {
             return curr->trace_path_normalized_actions(curr->g);
         }
-        //best_dists check is unnecessary bc open doesn’t receive duplicate nodes
         open.pop();
-        //assert(curr->g == (*best_dists.find(curr))->g);
+        closed.insert(curr);
 
         //check max depth here bc all edges unit length
         if (curr->g == max_depth) {
@@ -1093,59 +1079,37 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, open, false, nullptr);
 
                 if (!neighbor) {
                     continue;
                 }
-                //open doesn’t receive duplicate nodes -> every node generates at most once -> no need to push neighbor to sanode_ref_pool
-                //if closed optimal, no node generates more than once:
-                //assume closed optimal and a node generates more than once; then at some point node must be at top of open with best dist, and at some later point better path to node must be found
-                //"node at top of open" implies node is optimal, thus better path doesn't exist, contradiction
+                if (closed.find(neighbor) != closed.end()) {
+                    continue;
+                }
 
                 //calculate cost(s)
-                //update f/g/h in pathfind_sa_*() bc they could be used differently in each search type
-                //optimizations (use if no duplicate code is required or there are significant savings):
-                    //if neighbor in best_dists, recycle h-cost instead of recalculating it
-                    //move f-cost calculation to after best_dists check
-
-                //check if neighbor is duplicate with equal or worse cost
-                //this is necessary since from
-                //0, 0, 0
-                //P1, 1, 1
-                //both {(1, 0, 0), (1, 0, 1), (0, -1, 1)} and {(0, -1, 0), (1, 0, 0), (1, 0, 0)} result in same node
-                auto it = best_dists.find(neighbor);
-                if (it != best_dists.end()) {
-                    //neighbor is duplicate
-                    //if (neighbor->g >= (*it)->g) {
-                        //neighbor has equal or worse cost
-                        continue;
-                    //}
-                    /* not possible bc open is optimal
-                    else {
-                        //use *it=neighbor (wrong syntax but i don't care) if neighbor path better, and curr!=best_dists.find(curr) in expanding best_dists check
-                        //this way curr!=best_dists.find(curr) implies curr is a duplicate node with equal or worse dist
-                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g); //so no neighbor info from better dist SASearchNodes is lost
-                        best_dists.erase(it);
-                    }*/
-                }
+                //update f/g/h in pathfind_sa_*() for consistency
+                //micro-optimizations (use if no duplicate code is required or there are significant savings):
+                    //if neighbor in open, recycle h-cost instead of recalculating it
+                    //move f-cost calculation to after open check
                 neighbor->g = curr->g + 1;
-
-                //if neighbor hasn't been visited, it can't be ancestor of curr => no loop
+                
+                if (auto it = open.find(neighbor); it != nullptr) {
+                    continue;
+                }
                 open.Add(neighbor);
-                best_dists.insert(neighbor);
             }
         }
     }
     return Array();
 }
 
-//open and best_dists not necessarily optimal
+//open not necessarily optimal
 //closed optimal bc heuristic consistent (see SA lec5)
 Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     open_sa_fsort_t open;
-    closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+    closed_sa_t closed;
     Vector2i lv_end = end - min;
 
     shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
@@ -1154,7 +1118,6 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
     first->f = first->h;
     //first can have prev_action and prev_push_count uninitialized
     open.Add(first);
-    best_dists.insert(first);
 
     while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
@@ -1162,12 +1125,11 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
         if (curr->sanode->lv_pos == lv_end) {
             return curr->trace_path_normalized_actions(curr->g);
         }
-        //open may receive duplicate nodes (see Pictures/mda_closed_check_is_necessary)
         open.pop();
-        if (curr != *best_dists.find(curr)) {
-            continue;
-        }
+        closed.insert(curr);
 
+        //early exit
+        //this check is not sufficient since f can increase by more than one per action
         if (curr->g == max_depth) {
             continue;
         }
@@ -1178,46 +1140,41 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, open, false, nullptr);
 
                 if (!neighbor) {
+                    continue;
+                }
+                if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
                 neighbor->g = curr->g + 1;
                 neighbor->h = manhattan_dist(neighbor->sanode->lv_pos, lv_end);
                 neighbor->f = neighbor->g + neighbor->h;
 
-                //manhattan is consistent, so final path_len >= curr->f and f is monotonically increasing
-                //f can increase more than one unit at a time, so == check when expanding doesn't work
-                //if curr->g == max_depth, neighbor->g > max_depth, neighbor->f > max_depth, so no nodes are generated from max_depth
+                //since manhattan is consistent, final path_len >= curr->f and f is monotonically increasing
                 if (neighbor->f > max_depth) {
                     continue;
                 }
 
-                auto it = best_dists.find(neighbor);
-                if (it != best_dists.end()) {
-                    if (neighbor->g >= (*it)->g) {
-                        continue;
-                    }
-                    else {
-                        //check for 3+ dist improvement (bc I couldn't think of an example)
-                        //this is for fun, no code changes are needed
+                if (auto it = open.find(neighbor); it != nullptr) {
+                    if (neighbor->g < it->g) {
+                        /*
+                        //check for 3+ dist improvement example
                         if (neighbor->g <= (*it)->g - 3) {
                             UtilityFunctions::print("MDA FOUND 3+ DIST IMPROVEMENT!!!");
                             first->sanode->print_lv();
                             UtilityFunctions::print("start: ", start);
                             UtilityFunctions::print("end: ", end);
                             assert(false);
-                        }
-
-                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->f - neighbor->f);
-                        best_dists.erase(it);
+                        }*/
+                        neighbor->transfer_neighbors(it, it->g - neighbor->g);
+                        it->g = neighbor->g;
+                        open.DecreaseKey(it);
                     }
+                    continue;
                 }
-
                 open.Add(neighbor);
-                best_dists.insert(neighbor);
             }
         }
     }
@@ -1229,7 +1186,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
 //if h(first) == numeric_limits<int>::max(), exit early bc no path exists
 Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     open_sa_fsort_t open;
-    closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+    closed_sa_t closed;
     Vector2i lv_end = end - min;
     uint8_t agent_type_id = get_type_id(start);
     rrd_init_iad(end);
@@ -1246,7 +1203,6 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
     first->f = first->h;
     //first can have prev_action and prev_push_count uninitialized
     open.Add(first);
-    best_dists.insert(first);
 
     while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
@@ -1255,11 +1211,9 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
             return curr->trace_path_normalized_actions(curr->g);
         }
         open.pop();
-        if (curr != *best_dists.find(curr)) {
-            continue;
-        }
+        closed.insert(curr);
 
-        if (curr->g == max_depth) {
+        if (curr->g >= max_depth) {
             continue;
         }
 
@@ -1269,7 +1223,7 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, open, false, nullptr);
 
                 if (!neighbor) {
                     continue;
@@ -1279,19 +1233,25 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
                 neighbor->h = rrd_resume_iad(end, min + neighbor->sanode->lv_pos, agent_type_id);
                 neighbor->f = neighbor->g + neighbor->h;
 
-                auto it = best_dists.find(neighbor);
-                if (it != best_dists.end()) {
-                    if (neighbor->g >= (*it)->g) {
-                        continue;
+                if (auto it = open.find(neighbor); it != nullptr) {
+                    if (neighbor->g < it->g) {
+                        neighbor->transfer_neighbors(it, it->g - neighbor->g);
+                        it->g = neighbor->g;
+                        open.DecreaseKey(it);
+                    }
+                    continue;
+                }
+                if (auto it = closed.find(neighbor); it != closed.end()) {
+                    if (neighbor->g < (*it)->g) {
+                        //re-expansion
+                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g);
+                        closed.erase(it);
                     }
                     else {
-                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->f - neighbor->f);
-                        best_dists.erase(it);
+                        continue;
                     }
                 }
                 open.Add(neighbor);
-                best_dists.insert(neighbor);
             }
         }
     }
@@ -1301,7 +1261,6 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
 Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     open_sa_fsort_t open;
     closed_sa_t closed;
-    closed_sa_t best_dists; //to prevent duplicate nodes with equal or worse cost from being pushed to open
     Vector2i lv_end = end - min;
     uint8_t agent_type_id = get_type_id(start);
     rrd_init_iad(end);
@@ -1318,7 +1277,6 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
     first->f = first->h;
     //first can have prev_action and prev_push_count uninitialized
     open.Add(first);
-    best_dists.insert(first);
 
     while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
@@ -1327,14 +1285,9 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
             return curr->trace_path_normalized_actions(curr->g);
         }
         open.pop();
-
-        //closed check
-        if (closed.find(curr) != closed.end()) {
-            continue;
-        }
         closed.insert(curr);
 
-        if (curr->g == max_depth) {
+        if (curr->g >= max_depth) {
             continue;
         }
 
@@ -1344,31 +1297,27 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
             }
             for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP; ++action_id) {
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, open, false, nullptr);
 
                 if (!neighbor) {
+                    continue;
+                }
+                if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
                 neighbor->g = curr->g + 1;
                 neighbor->h = rrd_resume_iad(end, min + neighbor->sanode->lv_pos, agent_type_id);
                 neighbor->f = neighbor->g + neighbor->h;
-
-                if (closed.find(neighbor) != closed.end()) {
+                
+                if (auto it = open.find(neighbor); it != nullptr) {
+                    if (neighbor->g < it->g) {
+                        neighbor->transfer_neighbors(it, it->g - neighbor->g);
+                        it->g = neighbor->g;
+                        open.DecreaseKey(it);
+                    }
                     continue;
                 }
-                auto it = best_dists.find(neighbor);
-                if (it != best_dists.end()) {
-                    if (neighbor->g >= (*it)->g) {
-                        continue;
-                    }
-                    else {
-                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->f - neighbor->f);
-                        best_dists.erase(it);
-                    }
-                }
                 open.Add(neighbor);
-                best_dists.insert(neighbor);
             }
         }
     }
@@ -1433,13 +1382,12 @@ Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vect
 //open and best_dists not necessarily optimal
 Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     open_sa_gsort_t open;
-    closed_sa_t best_dists;
+    closed_sa_t closed;
     Vector2i lv_end = end - min;
 
     shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     open.Add(first);
-    best_dists.insert(first);
     int debug = 0;
 
     while (!open.Empty()) {
@@ -1452,9 +1400,7 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
         }
         //open may receive duplicate nodes (see Pictures/jpd_edge_case)
         open.pop();
-        if (curr != *best_dists.find(curr)) {
-            continue;
-        }
+        closed.insert(curr);
 
         //branch prediction makes this relatively quick, so check max_depth when both expanding and generating (unless it is redundant)
         if (curr->g == max_depth) {
@@ -1473,9 +1419,12 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
                     continue;
                 }
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, open, false, nullptr);
 
                 if (!neighbor) {
+                    continue;
+                }
+                if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
                 neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
@@ -1485,20 +1434,16 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
                 if (neighbor->g > max_depth) {
                     continue;
                 }
-
-                auto it = best_dists.find(neighbor);
-                if (it != best_dists.end()) {
-                    if (neighbor->g >= (*it)->g) {
-                        continue;
+                
+                if (auto it = open.find(neighbor); it != nullptr) {
+                    if (neighbor->g < it->g) {
+                        neighbor->transfer_neighbors(it, it->g - neighbor->g);
+                        it->g = neighbor->g;
+                        open.DecreaseKey(it);
                     }
-                    else {
-                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g);
-                        best_dists.erase(it);
-                    }
+                    continue;
                 }
                 open.Add(neighbor);
-                best_dists.insert(neighbor);
             }  
         }
     }
@@ -1508,7 +1453,7 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
 //closed optimal, open and best_dists not
 Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     open_sa_fsort_t open;
-    closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
+    closed_sa_t closed;
     Vector2i lv_end = end - min;
 
     shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
@@ -1517,7 +1462,6 @@ Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vecto
     first->f = first->h;
     //first can have prev_action and prev_push_count uninitialized
     open.Add(first);
-    best_dists.insert(first);
 
     while (!open.Empty()) {
         shared_ptr<SASearchNode> curr = open.top();
@@ -1527,173 +1471,6 @@ Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vecto
         }
         //open may receive duplicate nodes (see Pictures/mda_closed_check_is_necessary, replace agent w/ 2 and empty tiles w/ 1)
         open.pop();
-        if (curr != *best_dists.find(curr)) {
-            continue;
-        }
-
-        if (curr->g == max_depth) {
-            continue;
-        }
-
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
-            if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
-                continue;
-            }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
-                if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
-                    continue;
-                }
-                Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
-
-                if (!neighbor) {
-                    continue;
-                }
-                neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
-                neighbor->h = manhattan_dist(neighbor->sanode->lv_pos, lv_end);
-                neighbor->f = neighbor->g + neighbor->h;
-
-                //manhattan is consistent, so final path_len >= curr->f and f is monotonically increasing
-                //f can increase more than one unit at a time, so == check when expanding doesn't work
-                //if curr->g == max_depth, neighbor->g > max_depth, neighbor->f > max_depth, so no nodes are generated from max_depth
-                if (neighbor->f > max_depth) {
-                    continue;
-                }
-
-                auto it = best_dists.find(neighbor);
-                if (it != best_dists.end()) {
-                    if (neighbor->g >= (*it)->g) {
-                        continue;
-                    }
-                    else {
-                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->f - neighbor->f);
-                        best_dists.erase(it);
-                    }
-                }
-                open.Add(neighbor);
-                best_dists.insert(neighbor);
-            }
-        }
-    }
-    return Array();
-}
-
-//open and returned path are not necessarily optimal
-//if h(first) == numeric_limits<int>::max(), exit early bc no path exists
-Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    open_sa_fsort_t open;
-    closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
-    Vector2i lv_end = end - min;
-    uint8_t agent_type_id = get_type_id(start);
-    rrd_init_iad(end);
-
-    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
-    first->init_sanode(min, max, start);
-    first->h = rrd_resume_iad(end, start, agent_type_id);
-
-    //enclosed goal check
-    if (first->h == numeric_limits<int>::max()) {
-        return Array();
-    }
-
-    first->f = first->h;
-    //first can have prev_action and prev_push_count uninitialized
-    open.Add(first);
-    best_dists.insert(first);
-
-    while (!open.Empty()) {
-        shared_ptr<SASearchNode> curr = open.top();
-
-        if (curr->sanode->lv_pos == lv_end) {
-            return curr->trace_path_normalized_actions(curr->g);
-        }
-        open.pop();
-        if (curr != *best_dists.find(curr)) {
-            continue;
-        }
-
-        if (curr->g == max_depth) {
-            continue;
-        }
-
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
-            if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
-                continue;
-            }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
-                if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
-                    continue;
-                }
-                Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
-
-                if (!neighbor) {
-                    continue;
-                }
-                //nodes can generate more than once, += can cause double increment
-                neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
-                neighbor->h = rrd_resume_iad(end, min + neighbor->sanode->lv_pos, agent_type_id);
-                neighbor->f = neighbor->g + neighbor->h;
-
-                if (neighbor->g > max_depth) {
-                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->g - max_depth), neighbor->sanode, neighbor->prev_push_count}; //prune neighbor in case curr generates again
-                    continue;
-                }
-
-                auto it = best_dists.find(neighbor);
-                if (it != best_dists.end()) {
-                    if (neighbor->g >= (*it)->g) {
-                        continue;
-                    }
-                    else {
-                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->f - neighbor->f);
-                        best_dists.erase(it);
-                    }
-                }
-                open.Add(neighbor);
-                best_dists.insert(neighbor);
-            }
-        }
-    }
-    return Array();
-}
-
-Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-    open_sa_fsort_t open;
-    closed_sa_t closed;
-    closed_sa_t best_dists; //to prevent duplicate nodes with equal or worse cost from being pushed to open
-    Vector2i lv_end = end - min;
-    uint8_t agent_type_id = get_type_id(start);
-    rrd_init_iad(end);
-
-    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
-    first->init_sanode(min, max, start);
-    first->h = rrd_resume_iad(end, start, agent_type_id);
-
-    //enclosed goal check
-    if (first->h == numeric_limits<int>::max()) {
-        return Array();
-    }
-
-    first->f = first->h;
-    //first can have prev_action and prev_push_count uninitialized
-    open.Add(first);
-    best_dists.insert(first);
-
-    while (!open.Empty()) {
-        shared_ptr<SASearchNode> curr = open.top();
-
-        if (curr->sanode->lv_pos == lv_end) {
-            return curr->trace_path_normalized_actions(curr->g);
-        }
-        open.pop();
-
-        //closed check
-        if (closed.find(curr) != closed.end()) {
-            continue;
-        }
         closed.insert(curr);
 
         if (curr->g == max_depth) {
@@ -1709,9 +1486,172 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
                     continue;
                 }
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, open, false, nullptr);
 
                 if (!neighbor) {
+                    continue;
+                }
+                if (closed.find(neighbor) != closed.end()) {
+                    continue;
+                }
+                neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
+                neighbor->h = manhattan_dist(neighbor->sanode->lv_pos, lv_end);
+                neighbor->f = neighbor->g + neighbor->h;
+
+                //manhattan is consistent, so final path_len >= curr->f and f is monotonically increasing
+                //f can increase more than one unit at a time, so == check when expanding doesn't work
+                //if curr->g == max_depth, neighbor->g > max_depth, neighbor->f > max_depth, so no nodes are generated from max_depth
+                if (neighbor->f > max_depth) {
+                    continue;
+                }
+                
+                if (auto it = open.find(neighbor); it != nullptr) {
+                    if (neighbor->g < it->g) {
+                        neighbor->transfer_neighbors(it, it->g - neighbor->g);
+                        it->g = neighbor->g;
+                        open.DecreaseKey(it);
+                    }
+                    continue;
+                }
+                open.Add(neighbor);
+            }
+        }
+    }
+    return Array();
+}
+
+//open and returned path are not necessarily optimal
+//if h(first) == numeric_limits<int>::max(), exit early bc no path exists
+Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    open_sa_fsort_t open;
+    closed_sa_t closed;
+    Vector2i lv_end = end - min;
+    uint8_t agent_type_id = get_type_id(start);
+    rrd_init_iad(end);
+
+    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
+    first->init_sanode(min, max, start);
+    first->h = rrd_resume_iad(end, start, agent_type_id);
+
+    //enclosed goal check
+    if (first->h == numeric_limits<int>::max()) {
+        return Array();
+    }
+
+    first->f = first->h;
+    //first can have prev_action and prev_push_count uninitialized
+    open.Add(first);
+
+    while (!open.Empty()) {
+        shared_ptr<SASearchNode> curr = open.top();
+
+        if (curr->sanode->lv_pos == lv_end) {
+            return curr->trace_path_normalized_actions(curr->g);
+        }
+        open.pop();
+        closed.insert(curr);
+
+        if (curr->g >= max_depth) {
+            continue;
+        }
+
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
+            if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
+                continue;
+            }
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
+                if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
+                    continue;
+                }
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, open, false, nullptr);
+
+                if (!neighbor) {
+                    continue;
+                }
+                //nodes can generate more than once, += can cause double increment
+                neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
+                neighbor->h = rrd_resume_iad(end, min + neighbor->sanode->lv_pos, agent_type_id);
+                neighbor->f = neighbor->g + neighbor->h;
+
+                if (neighbor->g > max_depth) {
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->g - max_depth), neighbor->sanode, neighbor->prev_push_count}; //prune neighbor in case curr generates again
+                    continue;
+                }
+
+                if (auto it = open.find(neighbor); it != nullptr) {
+                    if (neighbor->g < it->g) {
+                        neighbor->transfer_neighbors(it, it->g - neighbor->g);
+                        it->g = neighbor->g;
+                        open.DecreaseKey(it);
+                    }
+                    continue;
+                }
+                if (auto it = closed.find(neighbor); it != closed.end()) {
+                    if (neighbor->g < (*it)->g) {
+                        //re-expansion
+                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g);
+                        closed.erase(it);
+                    }
+                    else {
+                        continue;
+                    }
+                }
+                open.Add(neighbor);
+            }
+        }
+    }
+    return Array();
+}
+
+Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
+    open_sa_fsort_t open;
+    closed_sa_t closed;
+    Vector2i lv_end = end - min;
+    uint8_t agent_type_id = get_type_id(start);
+    rrd_init_iad(end);
+
+    shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
+    first->init_sanode(min, max, start);
+    first->h = rrd_resume_iad(end, start, agent_type_id);
+
+    //enclosed goal check
+    if (first->h == numeric_limits<int>::max()) {
+        return Array();
+    }
+
+    first->f = first->h;
+    //first can have prev_action and prev_push_count uninitialized
+    open.Add(first);
+
+    while (!open.Empty()) {
+        shared_ptr<SASearchNode> curr = open.top();
+
+        if (curr->sanode->lv_pos == lv_end) {
+            return curr->trace_path_normalized_actions(curr->g);
+        }
+        open.pop();
+        closed.insert(curr);
+
+        if (curr->g >= max_depth) {
+            continue;
+        }
+
+        for (Vector2i dir : DIRECTIONS_HFIRST) {
+            if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
+                continue;
+            }
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
+                if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
+                    continue;
+                }
+                Vector3i normalized_action(dir.x, dir.y, action_id);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, open, false, nullptr);
+
+                if (!neighbor) {
+                    continue;
+                }
+                if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
                 neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
@@ -1721,23 +1661,16 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
                 if (neighbor->g > max_depth) {
                     continue;
                 }
-
-                if (closed.find(neighbor) != closed.end()) {
+                
+                if (auto it = open.find(neighbor); it != nullptr) {
+                    if (neighbor->g < it->g) {
+                        neighbor->transfer_neighbors(it, it->g - neighbor->g);
+                        it->g = neighbor->g;
+                        open.DecreaseKey(it);
+                    }
                     continue;
                 }
-                auto it = best_dists.find(neighbor);
-                if (it != best_dists.end()) {
-                    if (neighbor->g >= (*it)->g) {
-                        continue;
-                    }
-                    else {
-                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->f - neighbor->f);
-                        best_dists.erase(it);
-                    }
-                }
                 open.Add(neighbor);
-                best_dists.insert(neighbor);
             }
         }
     }
@@ -1746,13 +1679,12 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
 
 Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
     open_sa_gsort_t open;
-    closed_sa_t best_dists;
+    closed_sa_t closed;
     Vector2i lv_end = end - min;
 
     shared_ptr<SASearchNode> first = node_pool.acquire<SASearchNode>();
     first->init_sanode(min, max, start);
     open.Add(first);
-    best_dists.insert(first);
     int debug = 0;
 
     while (!open.Empty()) {
@@ -1766,9 +1698,7 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
         }
         //open may receive duplicate nodes (see Pictures/jpd_edge_case)
         open.pop();
-        if (curr != *best_dists.find(curr)) {
-            continue;
-        }
+        closed.insert(curr);
 
         //branch prediction makes this relatively quick, so check max_depth when both expanding and generating (unless it is redundant)
         if (curr->g == max_depth) {
@@ -1787,9 +1717,12 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
                     continue;
                 }
                 Vector3i normalized_action(dir.x, dir.y, action_id);
-                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, best_dists, false, nullptr);
+                shared_ptr<SASearchNode> neighbor = curr->try_action(normalized_action, lv_end, allow_type_change, open, false, nullptr);
 
                 if (!neighbor) {
+                    continue;
+                }
+                if (closed.find(neighbor) != closed.end()) {
                     continue;
                 }
                 neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
@@ -1800,19 +1733,16 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
                     continue;
                 }
 
-                auto it = best_dists.find(neighbor);
-                if (it != best_dists.end()) {
-                    if (neighbor->g >= (*it)->g) {
-                        continue;
+                if (auto it = open.find(neighbor); it != nullptr) {
+                    if (neighbor->g < it->g) {
+                        neighbor->transfer_neighbors(it, it->g - neighbor->g);
+                        it->g = neighbor->g;
+                        open.DecreaseKey(it);
+                        UtilityFunctions::print("added ", neighbor->sanode->lv_pos);
                     }
-                    else {
-                        neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
-                        (*it)->transfer_neighbors(neighbor, (*it)->g - neighbor->g);
-                        best_dists.erase(it);
-                    }
+                    continue;
                 }
                 open.Add(neighbor);
-                best_dists.insert(neighbor);
                 UtilityFunctions::print("added ", neighbor->sanode->lv_pos);
             }
         }
