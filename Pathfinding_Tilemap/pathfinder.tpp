@@ -11,7 +11,7 @@
 //closed not optimal bc path-informed heuristic not consistent
 //return empty PathInfo containers if no path exists
 template <typename RadiusGetter>
-void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius) {
+void Pathfinder::path_informed_mdanr(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius) {
     open_sapi_fsort_t open;
     closed_sapi_t closed;
 
@@ -36,10 +36,6 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
         }
         open.pop();
         closed.insert(curr);
-
-        if (curr->g == max_depth) {
-            continue;
-        }
 
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
@@ -89,7 +85,7 @@ void Pathfinder::path_informed_mda(int max_depth, bool allow_type_change, shared
 }
 
 template <typename RadiusGetter>
-void Pathfinder::path_informed_jpmda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius) {
+void Pathfinder::path_informed_jpmdanr(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius) {
 
 }
 

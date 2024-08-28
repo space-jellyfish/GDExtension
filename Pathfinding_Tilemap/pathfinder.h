@@ -622,9 +622,9 @@ public:
     bool is_goal_enclosed(shared_ptr<SANode> env, Vector2i lv_end);
     //iterative widening helper functions
     template <typename RadiusGetter>
-    void path_informed_mda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius);
+    void path_informed_mdanr(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius);
     template <typename RadiusGetter>
-    void path_informed_jpmda(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius);
+    void path_informed_jpmdanr(int max_depth, bool allow_type_change, shared_ptr<SANode> start, Vector2i lv_end, unique_ptr<PathInfo>& pi, bool trace_informers, bool sim_anneal, int radius, const RadiusGetter& get_radius);
     int get_h_reduction(int virtual_path_index, bool sim_anneal);
 
     //move back to global scope once testing is done

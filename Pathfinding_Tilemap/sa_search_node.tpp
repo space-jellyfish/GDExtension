@@ -656,7 +656,7 @@ Array SASearchNodeBase<SASearchNode_t>::trace_path_normalized_actions(int path_l
             //but what if there is a way to affect 2+ supportive tiles without invalidating prev path?
         //NAH, ignore supportive tiles
 //create unordered_map<lv_pos, set of indices at which lv_pos occurs in prev path> prev_path_indices
-    //path_informed_mda() stores largest_affected_path_index
+    //path_informed_mdanr() stores largest_affected_path_index
     //use std::set::lower_bound() to update it
 //account for Pictures/both_push_and_merge_are_admissible and generalization to higher tpl
     //NAH, too hard; see Pictures/similar_to_both_push_and_merge_are_admissible_but_push_not_admissible

@@ -1067,11 +1067,6 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
         open.pop();
         closed.insert(curr);
 
-        //check max depth here bc all edges unit length
-        if (curr->g == max_depth) {
-            continue;
-        }
-
         //generate neighbors
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
@@ -1094,6 +1089,10 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
                     //if neighbor in open, recycle h-cost instead of recalculating it
                     //move f-cost calculation to after open check
                 neighbor->g = curr->g + 1;
+
+                if (curr->g > max_depth) {
+                    continue;
+                }
                 
                 if (auto it = open.find(neighbor); it != nullptr) {
                     continue;
@@ -1127,12 +1126,6 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
         }
         open.pop();
         closed.insert(curr);
-
-        //early exit
-        //this check is not sufficient since f can increase by more than one per action
-        if (curr->g == max_depth) {
-            continue;
-        }
 
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
@@ -1213,10 +1206,6 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
         open.pop();
         closed.insert(curr);
 
-        if (curr->g >= max_depth) {
-            continue;
-        }
-
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
@@ -1232,6 +1221,10 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
                 neighbor->g = curr->g + 1;
                 neighbor->h = rrd_resume_iad(end, min + neighbor->sanode->lv_pos, agent_type_id);
                 neighbor->f = neighbor->g + neighbor->h;
+
+                if (curr->g > max_depth) {
+                    continue;
+                }
 
                 if (auto it = open.find(neighbor); it != nullptr) {
                     if (neighbor->g < it->g) {
@@ -1287,10 +1280,6 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
         open.pop();
         closed.insert(curr);
 
-        if (curr->g >= max_depth) {
-            continue;
-        }
-
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
@@ -1308,6 +1297,10 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
                 neighbor->g = curr->g + 1;
                 neighbor->h = rrd_resume_iad(end, min + neighbor->sanode->lv_pos, agent_type_id);
                 neighbor->f = neighbor->g + neighbor->h;
+
+                if (curr->g > max_depth) {
+                    continue;
+                }
                 
                 if (auto it = open.find(neighbor); it != nullptr) {
                     if (neighbor->g < it->g) {
@@ -1341,7 +1334,7 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
     //use greater lower bound and smaller range for nodes with higher virtual_path_index
 
 //use a reduced h_reduction if upcoming location in path has been affected?
-    //NAH, largest_affected_path_index update in path_informed_mda() accounts for pushing that occurs in prev_path
+    //NAH, largest_affected_path_index update in path_informed_mdanr() accounts for pushing that occurs in prev_path
 //for multi-agent version, iwd SANodes are reusable
 //if an iterative search ends with no valid path found, don't update any heuristics in the next iteration
 //if prev iteration has multiple optimal paths, use all of them? NAH, prioritize speed
@@ -1362,20 +1355,20 @@ Array Pathfinder::pathfind_sa_iwdmda(int max_depth, bool allow_type_change, Vect
     unique_ptr<PathInfo> pi = make_unique<PathInfo>();
 
     //enclosed goal check (radius == -1, no tile_id at dest)
-    path_informed_mda(max_depth, false, shape_sanode, lv_end, pi, false, false, 0, get_radius);
+    path_informed_mdanr(max_depth, false, shape_sanode, lv_end, pi, false, false, 0, get_radius);
     if (!pi->normalized_actions.size()) {
         return Array();
     }
     shape_sanode->init_lv_ttid(lv_end, end);
 
     while (radius < manhattan_dist_to_end - 1) {
-        path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, false, radius, get_radius);
+        path_informed_mdanr(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, false, radius, get_radius);
         ++radius;
         shape_sanode->widen_diamond(min, end, radius, check_bounds);
     }
-    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, false, radius, get_radius);
+    path_informed_mdanr(max_depth, allow_type_change, shape_sanode, lv_end, pi, true, false, radius, get_radius);
     shape_sanode->fill_complement(min, max, radius, get_radius);
-    path_informed_mda(max_depth, allow_type_change, shape_sanode, lv_end, pi, false, false, 0, get_radius); //radius is DONT_CARE
+    path_informed_mdanr(max_depth, allow_type_change, shape_sanode, lv_end, pi, false, false, 0, get_radius); //radius is DONT_CARE
     return pi->normalized_actions;
 }
 
@@ -1402,11 +1395,6 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
         open.pop();
         closed.insert(curr);
 
-        //branch prediction makes this relatively quick, so check max_depth when both expanding and generating (unless it is redundant)
-        if (curr->g == max_depth) {
-            continue;
-        }
-
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
@@ -1428,6 +1416,10 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
                     continue;
                 }
                 neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
+
+                if (curr->g > max_depth) {
+                    continue;
+                }
 
                 //place check here to catch nodes that exceed max_depth as early as possible
                 //since open << closed for typical search, generating check is not much more expensive than expanding check
@@ -1473,10 +1465,6 @@ Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vecto
         open.pop();
         closed.insert(curr);
 
-        if (curr->g == max_depth) {
-            continue;
-        }
-
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
@@ -1498,9 +1486,6 @@ Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vecto
                 neighbor->h = manhattan_dist(neighbor->sanode->lv_pos, lv_end);
                 neighbor->f = neighbor->g + neighbor->h;
 
-                //manhattan is consistent, so final path_len >= curr->f and f is monotonically increasing
-                //f can increase more than one unit at a time, so == check when expanding doesn't work
-                //if curr->g == max_depth, neighbor->g > max_depth, neighbor->f > max_depth, so no nodes are generated from max_depth
                 if (neighbor->f > max_depth) {
                     continue;
                 }
@@ -1550,10 +1535,6 @@ Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vect
         }
         open.pop();
         closed.insert(curr);
-
-        if (curr->g >= max_depth) {
-            continue;
-        }
 
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
@@ -1633,10 +1614,6 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
         open.pop();
         closed.insert(curr);
 
-        if (curr->g >= max_depth) {
-            continue;
-        }
-
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
@@ -1659,6 +1636,7 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
                 neighbor->f = neighbor->g + neighbor->h;
 
                 if (neighbor->g > max_depth) {
+                    //pruning neighbor is unnecessary since curr isn't re-expanded
                     continue;
                 }
                 
@@ -1700,11 +1678,6 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
         open.pop();
         closed.insert(curr);
 
-        //branch prediction makes this relatively quick, so check max_depth when both expanding and generating (unless it is redundant)
-        if (curr->g == max_depth) {
-            continue;
-        }
-
         for (Vector2i dir : DIRECTIONS_HFIRST) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
@@ -1727,7 +1700,6 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
                 }
                 neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
 
-                //place check here to catch nodes that exceed max_depth as early as possible
                 //since open << closed for typical search, generating check is not much more expensive than expanding check
                 if (neighbor->g > max_depth) {
                     continue;

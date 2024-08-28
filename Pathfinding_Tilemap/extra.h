@@ -720,3 +720,7 @@ inconsistent_abstract_dists[goal_pos].best_gs.emplace(goal_pos, 0);
 
 //closed_sa_t best_dists; //hs must be same, so prune if g >= best_g; see also Pictures/best_dists_justification_astar
 //neighbor->sanode = (*it)->sanode; //this ensures no duplicate SANodes in the SASearchNodes in open
+
+                //manhattan is consistent, so final path_len >= curr->f and f is monotonically increasing
+                //f can increase more than one unit at a time, so == check when expanding doesn't work
+                //if curr->g == max_depth, neighbor->g > max_depth, neighbor->f > max_depth, so no nodes are generated from max_depth
