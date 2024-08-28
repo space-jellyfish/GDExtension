@@ -20,6 +20,7 @@ env.Append(LINKFLAGS=['-stdlib=libc++']);
 
 # tweak this if you want to use different folders, or more folders, to store your source code in.
 env.Append(CPPPATH="Pathfinding_Tilemap/")
+env.Append(CPPPATH="Pathfinding_Tilemap/open_list_hog/")
 src = Glob("Pathfinding_Tilemap/*.cpp")
 
 if env['platform'] == 'macos':

@@ -499,12 +499,12 @@ struct SASearchNodeBase : public enable_shared_from_this<SASearchNodeBase<SASear
     shared_ptr<SASearchNode_t> try_slide(Vector2i dir, bool allow_type_change);
     shared_ptr<SASearchNode_t> try_split(Vector2i dir, bool allow_type_change);
     template <typename OpenList_t>
-    shared_ptr<SASearchNode_t> try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change, const OpenList_t& open, bool ignore_prune, int* max_constrained_jump_scan_dist);
+    shared_ptr<SASearchNode_t> try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change, OpenList_t& open, bool ignore_prune, int* max_constrained_jump_scan_dist);
 
     template <typename OpenList_t>
-    shared_ptr<SASearchNode_t> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const OpenList_t& open);
+    shared_ptr<SASearchNode_t> try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, OpenList_t& open);
     template <typename OpenList_t>
-    shared_ptr<SASearchNode_t> try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const OpenList_t& open, bool ignore_prune, int* max_scan_dist);
+    shared_ptr<SASearchNode_t> try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, OpenList_t& open, bool ignore_prune, int* max_scan_dist);
     shared_ptr<SASearchNode_t> get_jump_point(shared_ptr<SANode> prev_sanode, Vector2i dir, Vector2i jp_pos, unsigned int jump_dist, int action_id);
     void prune_invalid_action_ids(Vector2i dir);
     void prune_backtrack(Vector2i dir);

@@ -73,7 +73,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_split(Vector2i 
 //return newly-created SASearchNode (this ensures duplicate detection works as intended)
 template <typename SASearchNode_t>
 template <typename OpenList_t>
-shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change, const OpenList_t& open, bool ignore_prune, int* max_constrained_jump_scan_dist) {
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change, OpenList_t& open, bool ignore_prune, int* max_constrained_jump_scan_dist) {
     //check for stored neighbor
     auto it = neighbors.find(normalized_action);
     if (it != neighbors.end()) {
@@ -140,7 +140,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
 //when generating from jp, generate split in all dirs, generate slide iff next tile isn't empty_and_regular
 template <typename SASearchNode_t>
 template <typename OpenList_t>
-shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const OpenList_t& open) {
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, OpenList_t& open) {
     //check bounds NAH, pathfind_sa*() checks while generating
     //check obstruction
     uint8_t src_type_id = get_type_id(sanode->get_lv_sid(sanode->lv_pos));
@@ -188,6 +188,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
             if (it->g <= curr_g) {
                 //see Pictures/node_along_jump_that_is_visited_with_better_g_handles_remainder_of_jump
                 transfer_neighbors(it, curr_g - it->g);
+                it->neighbors[Vector3i(-dir.x, -dir.y, ActionId::CONSTRAINED_JUMP)] = {static_cast<unsigned int>(2 * curr_dist + 1), nullptr, 0};
                 return nullptr;
             }
             else {
@@ -312,7 +313,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
 //return a_i when jp found; constraint is effectively updated when a_i continues the vertical jump
 template <typename SASearchNode_t>
 template <typename OpenList_t>
-shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, const OpenList_t& open, bool ignore_prune, int* max_scan_dist) {
+shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, OpenList_t& open, bool ignore_prune, int* max_scan_dist) {
     //check bounds NAH, pathfind_sa*() checks while generating
     //check obstruction
     uint8_t src_type_id = get_type_id(sanode->get_lv_sid(sanode->lv_pos));
@@ -385,6 +386,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
                 if (!ignore_prune) {
                     //see Pictures/node_along_jump_that_is_visited_with_better_g_handles_remainder_of_jump
                     transfer_neighbors(it, curr_g - it->g);
+                    it->neighbors[Vector3i(-dir.x, -dir.y, ActionId::CONSTRAINED_JUMP)] = {static_cast<unsigned int>(2 * curr_dist + 1), nullptr, 0};
                     return nullptr;
                 }
             }
