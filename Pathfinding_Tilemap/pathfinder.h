@@ -173,7 +173,7 @@ struct ActionHasher {
 const unordered_set<uint8_t> B_WALL_OR_BORDER = {BackId::BORDER_ROUND, BackId::BORDER_SQUARE, BackId::BLACK_WALL, BackId::BLUE_WALL, BackId::RED_WALL};
 const unordered_set<uint8_t> B_SAVE_OR_GOAL = {BackId::SAVEPOINT, BackId::GOAL};
 const unordered_set<uint8_t> T_ENEMY = {TypeId::INVINCIBLE, TypeId::HOSTILE, TypeId::VOID};
-const vector<Vector2i> DIRECTIONS_HFIRST = {Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)};
+const vector<Vector2i> DIRECTIONS = {Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)};
 const unordered_map<uint8_t, int> MERGE_PRIORITIES = {{TypeId::PLAYER, 1}, {TypeId::INVINCIBLE, 3}, {TypeId::HOSTILE, 2}, {TypeId::VOID, 4}, {TypeId::REGULAR, 0}};
 const int HASH_KEY_GENERATOR_SEED = 2050;
 const int TILE_POW_MAX = 14;
@@ -432,9 +432,9 @@ struct SANode : public enable_shared_from_this<SANode> {
 };
 
 struct SANeighbor {
-    unsigned int unprune_threshold;
-    shared_ptr<SANode> sanode;
-    unsigned int push_count;
+    unsigned int unprune_threshold = 0;
+    shared_ptr<SANode> sanode = nullptr;
+    unsigned int push_count = 0;
 
     SANeighbor() {} //so operator[] works
     SANeighbor(unsigned int _unprune_threshold, shared_ptr<SANode> _sanode, unsigned int _push_count)
@@ -672,6 +672,9 @@ extern unordered_map<Vector2i, RRDIADLists, Vector2iHasher> inconsistent_abstrac
 extern unordered_map<Vector2i, RRDCADLists, Vector2iHasher> consistent_abstract_dists; //goal_pos, rrd lists
 extern array<double, SASearchId::SEARCH_END> sa_cumulative_search_times; //search_id, cumulative time (ms)
 extern MultiTypeObjectPool node_pool;
+
+//debug
+extern shared_ptr<SASearchNode> debug_sa_node;
 
 //templated implementations
 #include "sanode.tpp"

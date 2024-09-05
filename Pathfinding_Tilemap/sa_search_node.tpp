@@ -74,6 +74,10 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_split(Vector2i 
 template <typename SASearchNode_t>
 template <typename OpenList_t>
 shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change, OpenList_t& open, bool ignore_prune, int* max_constrained_jump_scan_dist) {
+    if (debug_sa_node) {
+        assert(debug_sa_node->neighbors[Vector3i(0, -1, ActionId::CONSTRAINED_JUMP)].unprune_threshold);
+    }
+
     //check for stored neighbor
     auto it = neighbors.find(normalized_action);
     if (it != neighbors.end()) {
@@ -314,6 +318,14 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
 template <typename SASearchNode_t>
 template <typename OpenList_t>
 shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, OpenList_t& open, bool ignore_prune, int* max_scan_dist) {
+    if (sanode->lv_pos == Vector2i(7, 22) && dir == Vector2i(0, -1)) {
+        if (neighbors[Vector3i(0, -1, ActionId::CONSTRAINED_JUMP)].unprune_threshold) {
+            UtilityFunctions::print("YAY");
+        }
+        else {
+            UtilityFunctions::print("NAY");
+        }
+    }
     //check bounds NAH, pathfind_sa*() checks while generating
     //check obstruction
     uint8_t src_type_id = get_type_id(sanode->get_lv_sid(sanode->lv_pos));
@@ -433,6 +445,9 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
             }
 
             if (next_empty_and_regular) {
+                if (sanode->lv_pos == Vector2i(0, 22) && curr_jp->sanode->lv_pos == Vector2i(7, 22) && next_dir.dir == Vector2i(0, -1)) {
+                    UtilityFunctions::print("HERE");
+                }
                 //next empty check
                 if (next_dir.dir == dir) {
                     //blocked in jump_dir is DON'T CARE, no need to update
@@ -443,17 +458,29 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
                 curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::SLIDE)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
 
                 if (horizontal && next_dir.dir != dir) {
+                    if (sanode->lv_pos == Vector2i(0, 22) && curr_jp->sanode->lv_pos == Vector2i(7, 22) && next_dir.dir == Vector2i(0, -1)) {
+                        UtilityFunctions::print("HERE2");
+                    }
                     //horizontal forced neighbor check
                     if (next_dir.blocked) {
                         ans = curr_jp;
+                        if (sanode->lv_pos == Vector2i(0, 22) && curr_jp->sanode->lv_pos == Vector2i(7, 22) && next_dir.dir == Vector2i(0, -1)) {
+                            UtilityFunctions::print("HERE4");
+                        }
                         //ans found, no need to update blocked
                         continue;
                     }
                     else {
+                        if (sanode->lv_pos == Vector2i(0, 22) && curr_jp->sanode->lv_pos == Vector2i(7, 22) && next_dir.dir == Vector2i(0, -1)) {
+                            UtilityFunctions::print("HERE5");
+                        }
                         //prune jump if horizontal, perp, and not blocked
                         //unprune_threshold should be 1, see Pictures/jps_nonnatural_nonforced_unprune_threshold_should_be_one
                         curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::CONSTRAINED_JUMP)] = {1, nullptr, 0};
                     }
+                }
+                if (sanode->lv_pos == Vector2i(0, 22) && curr_jp->sanode->lv_pos == Vector2i(7, 22) && next_dir.dir == Vector2i(0, -1)) {
+                    UtilityFunctions::print("HERE3");
                 }
             }
             else {
@@ -538,8 +565,8 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::get_jump_point(shar
     //unprune threshold should be 2 * true_reverse_jump_dist + 1; since true_reverse_jump_dist unknown, use 3 to be safe
     //(see Pictures/reverse_jump_unprune_threshold, Pictures/prev_is_not_reverse_jump_in_general, JPS pruning rules)
     //don't use unprune_threshold = numeric_limits<unsigned int>::max() (see Pictures/jps_needs_unpruning)
-    ans->neighbors[Vector3i(-dir.x, -dir.y, action_id)] = {3, nullptr, 0};
-    //ans->neighbors[Vector3i(-dir.x, -dir.y, action_id)] = {2 * jump_dist + 1, sanode, 0};
+    //ans->neighbors[Vector3i(-dir.x, -dir.y, action_id)] = {3, nullptr, 0};
+    ans->neighbors[Vector3i(-dir.x, -dir.y, action_id)] = {2 * jump_dist + 1, sanode, 0};
 
     return ans;
 }

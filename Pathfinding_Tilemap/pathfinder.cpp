@@ -21,6 +21,9 @@ unordered_map<Vector2i, RRDCADLists, Vector2iHasher> consistent_abstract_dists; 
 array<double, SASearchId::SEARCH_END> sa_cumulative_search_times{}; //search_id, cumulative time (ms); value-init to zero
 MultiTypeObjectPool node_pool;
 
+//debug
+shared_ptr<SASearchNode> debug_sa_node;
+
 void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_player_pos", "pos"), &Pathfinder::set_player_pos);
     ClassDB::bind_method(D_METHOD("set_player_last_dir", "dir"), &Pathfinder::set_player_last_dir);
@@ -425,7 +428,7 @@ int rrd_resume_iad(Vector2i goal_pos, Vector2i node_pos, int agent_type_id) {
         open.pop();
 
         uint8_t curr_tile_id = get_tile_id(n.pos);
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             Vector2i next_pos = n.pos + dir;
 
             if (!is_compatible(agent_type_id, get_back_id(next_pos))) {
@@ -517,7 +520,7 @@ int rrd_resume_cad(Vector2i goal_pos, Vector2i agent_pos) {
         }
         open.pop();
 
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             Vector2i next_pos = curr->pos + dir;
 
             if (!is_compatible(agent_type_id, get_back_id(next_pos))) {
@@ -1068,7 +1071,7 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
         closed.insert(curr);
 
         //generate neighbors
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1091,6 +1094,8 @@ Array Pathfinder::pathfind_sa_dijkstra(int max_depth, bool allow_type_change, Ve
                 neighbor->g = curr->g + 1;
 
                 if (curr->g > max_depth) {
+                    //prune neighbor in case curr tries action again
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->g - max_depth), neighbor->sanode, neighbor->prev_push_count};
                     continue;
                 }
                 
@@ -1127,7 +1132,7 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
         open.pop();
         closed.insert(curr);
 
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1147,6 +1152,8 @@ Array Pathfinder::pathfind_sa_mda(int max_depth, bool allow_type_change, Vector2
 
                 //since manhattan is consistent, final path_len >= curr->f and f is monotonically increasing
                 if (neighbor->f > max_depth) {
+                    //prune neighbor in case curr tries action again
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->f - max_depth), neighbor->sanode, neighbor->prev_push_count};
                     continue;
                 }
 
@@ -1206,7 +1213,7 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
         open.pop();
         closed.insert(curr);
 
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1223,6 +1230,8 @@ Array Pathfinder::pathfind_sa_iada(int max_depth, bool allow_type_change, Vector
                 neighbor->f = neighbor->g + neighbor->h;
 
                 if (curr->g > max_depth) {
+                    //prune neighbor in case curr tries action again
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->g - max_depth), neighbor->sanode, neighbor->prev_push_count};
                     continue;
                 }
 
@@ -1280,7 +1289,7 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
         open.pop();
         closed.insert(curr);
 
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1299,6 +1308,8 @@ Array Pathfinder::pathfind_sa_iadanr(int max_depth, bool allow_type_change, Vect
                 neighbor->f = neighbor->g + neighbor->h;
 
                 if (curr->g > max_depth) {
+                    //prune neighbor in case curr tries action again
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->g - max_depth), neighbor->sanode, neighbor->prev_push_count};
                     continue;
                 }
                 
@@ -1395,7 +1406,7 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
         open.pop();
         closed.insert(curr);
 
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1418,6 +1429,8 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
                 neighbor->g = curr->g + get_action_dist(neighbor->prev_action);
 
                 if (curr->g > max_depth) {
+                    //prune neighbor in case curr tries action again
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->g - max_depth), neighbor->sanode, neighbor->prev_push_count};
                     continue;
                 }
 
@@ -1465,7 +1478,7 @@ Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vecto
         open.pop();
         closed.insert(curr);
 
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1487,6 +1500,8 @@ Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vecto
                 neighbor->f = neighbor->g + neighbor->h;
 
                 if (neighbor->f > max_depth) {
+                    //prune neighbor in case curr tries action again
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->f - max_depth), neighbor->sanode, neighbor->prev_push_count};
                     continue;
                 }
                 
@@ -1536,7 +1551,7 @@ Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vect
         open.pop();
         closed.insert(curr);
 
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1556,7 +1571,8 @@ Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vect
                 neighbor->f = neighbor->g + neighbor->h;
 
                 if (neighbor->g > max_depth) {
-                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->g - max_depth), neighbor->sanode, neighbor->prev_push_count}; //prune neighbor in case curr generates again
+                    //prune neighbor in case curr tries action again
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->g - max_depth), neighbor->sanode, neighbor->prev_push_count};
                     continue;
                 }
 
@@ -1614,7 +1630,7 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
         open.pop();
         closed.insert(curr);
 
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1636,7 +1652,9 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
                 neighbor->f = neighbor->g + neighbor->h;
 
                 if (neighbor->g > max_depth) {
-                    //pruning neighbor is unnecessary since curr isn't re-expanded
+                    //pruning neighbor is unnecessary since curr isn't re-expanded?
+                    //prune neighbor in case curr tries action again
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->g - max_depth), neighbor->sanode, neighbor->prev_push_count};
                     continue;
                 }
                 
@@ -1678,7 +1696,7 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
         open.pop();
         closed.insert(curr);
 
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -1702,6 +1720,8 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
 
                 //since open << closed for typical search, generating check is not much more expensive than expanding check
                 if (neighbor->g > max_depth) {
+                    //prune neighbor in case curr tries action again
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor->g - max_depth), neighbor->sanode, neighbor->prev_push_count};
                     continue;
                 }
 
@@ -1711,11 +1731,17 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
                         it->g = neighbor->g;
                         open.DecreaseKey(it);
                         UtilityFunctions::print("added ", neighbor->sanode->lv_pos);
+                        if (neighbor->sanode->lv_pos == Vector2i(7, 22)) {
+                            debug_sa_node = neighbor;
+                        }
                     }
                     continue;
                 }
                 open.Add(neighbor);
                 UtilityFunctions::print("added ", neighbor->sanode->lv_pos);
+                if (neighbor->sanode->lv_pos == Vector2i(7, 22)) {
+                    debug_sa_node = neighbor;
+                }
             }
         }
     }
@@ -1801,6 +1827,7 @@ bool Pathfinder::is_immediately_trapped(Vector2i pos) {
 
 //use sanode to avoid calling get_back_id(pos) unnecessarily
 //use jpmda bc without tiles, jp is faster
+//use weighted astar for speed
 bool Pathfinder::is_goal_enclosed(shared_ptr<SANode> env, Vector2i lv_end) {
     open_e_t open;
     best_dist_arr_t best_dists(env->lv.size(), std::vector<int>(env->lv[0].size(), numeric_limits<int>::max()));
@@ -1822,7 +1849,7 @@ bool Pathfinder::is_goal_enclosed(shared_ptr<SANode> env, Vector2i lv_end) {
             continue;
         }
 
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             
         }
     }

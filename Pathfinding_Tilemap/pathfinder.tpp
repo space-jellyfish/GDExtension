@@ -37,7 +37,7 @@ void Pathfinder::path_informed_mdanr(int max_depth, bool allow_type_change, shar
         open.pop();
         closed.insert(curr);
 
-        for (Vector2i dir : DIRECTIONS_HFIRST) {
+        for (Vector2i dir : DIRECTIONS) {
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
@@ -54,7 +54,10 @@ void Pathfinder::path_informed_mdanr(int max_depth, bool allow_type_change, shar
                 neighbor->g = curr->g + 1;
                 neighbor->h = manhattan_dist(neighbor->sanode->lv_pos, lv_end);
 
-                if (neighbor->g + neighbor->h > max_depth) {
+                int neighbor_true_f = neighbor->g + neighbor->h;
+                if (neighbor_true_f > max_depth) {
+                    //prune neighbor in case curr tries action again
+                    curr->neighbors[normalized_action] = {static_cast<unsigned int>(neighbor_true_f - max_depth), neighbor->sanode, neighbor->prev_push_count};
                     continue;
                 }
 
