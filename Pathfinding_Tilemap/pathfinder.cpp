@@ -1749,15 +1749,15 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
 }
 
 Array Pathfinder::pathfind_sa_cjpmda(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-
+    return Array();
 }
 
 Array Pathfinder::pathfind_sa_cjpiada(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-
+    return Array();
 }
 
 Array Pathfinder::pathfind_sa_cjpiadanr(int max_depth, bool allow_type_change, Vector2i min, Vector2i max, Vector2i start, Vector2i end) {
-
+    return Array();
 }
 
 void Pathfinder::set_player_pos(Vector2i pos) {
