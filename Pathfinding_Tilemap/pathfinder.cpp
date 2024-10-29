@@ -580,7 +580,7 @@ bool is_perp(Vector2i first, Vector2i second) {
 }
 
 int get_cad_push_count() {
-
+    return 0;
 }
 
 int manhattan_dist(Vector2i pos1, Vector2i pos2) {
