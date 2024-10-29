@@ -68,14 +68,15 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_split(Vector2i 
     return ans;
 }
 
-//g/h/f are default-init to 0
+//wrapper around action function that checks for stored neighbor
 //updates prev_action for slide/split, stores result in curr->neighbors
 //return newly-created SASearchNode (this ensures duplicate detection works as intended)
+//g/h/f are default-init to 0
 template <typename SASearchNode_t>
 template <typename OpenList_t>
 shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i normalized_action, Vector2i lv_end, bool allow_type_change, OpenList_t& open, bool ignore_prune, int* max_constrained_jump_scan_dist) {
     if (debug_sa_node) {
-        assert(debug_sa_node->neighbors[Vector3i(0, -1, ActionId::CONSTRAINED_JUMP)].unprune_threshold);
+        assert(debug_sa_node->neighbors[Vector3i(0, -1, ActionId::JUMP_C)].unprune_threshold);
     }
 
     //check for stored neighbor
@@ -90,7 +91,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
         if (neighbor.sanode) {
             shared_ptr<SASearchNode_t> ans = node_pool.acquire<SASearchNode_t>();
             ans->sanode = neighbor.sanode;
-            if (normalized_action.z == ActionId::JUMP || normalized_action.z == ActionId::CONSTRAINED_JUMP) {
+            if (normalized_action.z == ActionId::JUMP || normalized_action.z == ActionId::JUMP_C) {
                 unsigned int jump_dist = manhattan_dist(sanode->lv_pos, ans->sanode->lv_pos);
                 ans->prev_action = Vector3i(jump_dist * normalized_action.x, jump_dist * normalized_action.y, normalized_action.z);
             }
@@ -115,7 +116,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
         case ActionId::JUMP:
             ans = try_jump(dir, lv_end, allow_type_change, open);
             break;
-        case ActionId::CONSTRAINED_JUMP:
+        case ActionId::JUMP_C:
             ans = try_constrained_jump(dir, lv_end, allow_type_change, open, ignore_prune, max_constrained_jump_scan_dist);
             break;
         default:
@@ -128,8 +129,8 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_action(Vector3i
         //update neighbors
         neighbors[normalized_action] = {0, ans->sanode, ans->prev_push_count};
     }
-    else {
-        //action invalid; don't unprune
+    else if (normalized_action.z != ActionId::JUMP_IP && normalized_action.z != ActionId::JUMP_IPC) {
+        //action invalid, prune it
         neighbors[normalized_action] = {numeric_limits<unsigned int>::max(), nullptr, 0};
     }
     return ans;
@@ -184,23 +185,6 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
         //get current jump point; reuse sanode if possible
         shared_ptr<SANode> prev_sanode = (curr_dist > 1) ? curr_jp->sanode : nullptr;
         curr_jp = get_jump_point(prev_sanode, dir, curr_pos, curr_dist, ActionId::JUMP);
-
-        //check if visited with equal or better dist
-        auto it = open.find(curr_jp);
-        if (it != nullptr) {
-            int curr_g = g + curr_dist;
-            if (it->g <= curr_g) {
-                //see Pictures/node_along_jump_that_is_visited_with_better_g_handles_remainder_of_jump
-                transfer_neighbors(it, curr_g - it->g);
-                it->neighbors[Vector3i(-dir.x, -dir.y, ActionId::CONSTRAINED_JUMP)] = {static_cast<unsigned int>(2 * curr_dist + 1), nullptr, 0};
-                return nullptr;
-            }
-            else {
-                //found better path, declare curr_jp as jump point
-                //search function handles neighbor transfer
-                return curr_jp;
-            }
-        }
 
         //check lv_end
         if (curr_pos == lv_end) {
@@ -265,7 +249,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_jump(Vector2i d
                 curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
             }
 
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP_C; ++action_id) {
                 //store next_action result in curr_jp->neighbors and if valid, return curr_jp
                 //if next_dir.dir == dir, either next empty check activates or !next_empty_and_regular (jump is pruned)
                 if (action_id == ActionId::JUMP && (horizontal || !next_empty_and_regular)) {
@@ -319,7 +303,7 @@ template <typename SASearchNode_t>
 template <typename OpenList_t>
 shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jump(Vector2i dir, Vector2i lv_end, bool allow_type_change, OpenList_t& open, bool ignore_prune, int* max_scan_dist) {
     if (sanode->lv_pos == Vector2i(7, 22) && dir == Vector2i(0, -1)) {
-        if (neighbors[Vector3i(0, -1, ActionId::CONSTRAINED_JUMP)].unprune_threshold) {
+        if (neighbors[Vector3i(0, -1, ActionId::JUMP_C)].unprune_threshold) {
             UtilityFunctions::print("YAY");
         }
         else {
@@ -356,7 +340,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
             //init perp_max_scan_dist (DON'T CARE if horizontal)
             int perp_max_scan_dist = numeric_limits<int>::max();
             if (!horizontal) {
-                Vector3i normalized_perp_jump(next_dir.x, next_dir.y, ActionId::CONSTRAINED_JUMP);
+                Vector3i normalized_perp_jump(next_dir.x, next_dir.y, ActionId::JUMP_C);
 
                 //get hjump point to use as key to open to get g_v to calculate d (ignoring prune)
                 //this should not cause infinite recursion since horizontal cjump doesn't call cjump
@@ -388,7 +372,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
         //UtilityFunctions::print("scan node");
         //get current jump point; reuse sanode if possible
         shared_ptr<SANode> prev_sanode = (curr_dist > 1) ? curr_jp->sanode : nullptr;
-        curr_jp = get_jump_point(prev_sanode, dir, curr_pos, curr_dist, ActionId::CONSTRAINED_JUMP);
+        curr_jp = get_jump_point(prev_sanode, dir, curr_pos, curr_dist, ActionId::JUMP_C);
 
         //check if visited with equal or better dist
         auto it = open.find(curr_jp);
@@ -398,7 +382,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
                 if (!ignore_prune) {
                     //see Pictures/node_along_jump_that_is_visited_with_better_g_handles_remainder_of_jump
                     transfer_neighbors(it, curr_g - it->g);
-                    it->neighbors[Vector3i(-dir.x, -dir.y, ActionId::CONSTRAINED_JUMP)] = {static_cast<unsigned int>(2 * curr_dist + 1), nullptr, 0};
+                    it->neighbors[Vector3i(-dir.x, -dir.y, ActionId::JUMP_C)] = {static_cast<unsigned int>(2 * curr_dist + 1), nullptr, 0};
                     return nullptr;
                 }
             }
@@ -476,7 +460,7 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
                         }
                         //prune jump if horizontal, perp, and not blocked
                         //unprune_threshold should be 1, see Pictures/jps_nonnatural_nonforced_unprune_threshold_should_be_one
-                        curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::CONSTRAINED_JUMP)] = {1, nullptr, 0};
+                        curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP_C)] = {1, nullptr, 0};
                     }
                 }
                 if (sanode->lv_pos == Vector2i(0, 22) && curr_jp->sanode->lv_pos == Vector2i(7, 22) && next_dir.dir == Vector2i(0, -1)) {
@@ -485,13 +469,13 @@ shared_ptr<SASearchNode_t> SASearchNodeBase<SASearchNode_t>::try_constrained_jum
             }
             else {
                 //prune jump if not
-                curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::CONSTRAINED_JUMP)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
+                curr_jp->neighbors[Vector3i(next_dir.dir.x, next_dir.dir.y, ActionId::JUMP_C)] = {numeric_limits<unsigned int>::max(), nullptr, 0};
             }
 
-            for (int action_id : {ActionId::SLIDE, ActionId::SPLIT, ActionId::CONSTRAINED_JUMP}) {
+            for (int action_id : {ActionId::SLIDE, ActionId::SPLIT, ActionId::JUMP_C}) {
                 //store next_action result in curr_jp->neighbors and if valid, return curr_jp
                 //if next_dir.dir == dir, either next empty check activates or !next_empty_and_regular (jump is pruned)
-                if (action_id == ActionId::CONSTRAINED_JUMP && (horizontal || !next_empty_and_regular)) {
+                if (action_id == ActionId::JUMP_C && (horizontal || !next_empty_and_regular)) {
                     continue;
                 }
 

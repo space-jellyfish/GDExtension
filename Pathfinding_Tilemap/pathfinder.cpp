@@ -375,7 +375,7 @@ Vector2i get_normalized_dir(Vector3i action) {
 }
 
 Vector3i get_normalized_action(Vector3i action) {
-    if (action.z != ActionId::JUMP && action.z != ActionId::CONSTRAINED_JUMP) {
+    if (action.z != ActionId::JUMP && action.z != ActionId::JUMP_C) {
         return action;
     }
     return Vector3i(sgn(action.x), sgn(action.y), ActionId::SLIDE);
@@ -1410,7 +1410,7 @@ Array Pathfinder::pathfind_sa_jpd(int max_depth, bool allow_type_change, Vector2
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP_C; ++action_id) {
                 //generate split in all dirs, don't generate slide if next tile is empty_and_regular
                 //generate jump iff next tile is empty_and_regular and dir is natural - handled in try_jump()
                 //only search in dir of natural neighbors (except first node) - handled via pruning
@@ -1482,7 +1482,7 @@ Array Pathfinder::pathfind_sa_jpmda(int max_depth, bool allow_type_change, Vecto
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP_C; ++action_id) {
                 if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
                     continue;
                 }
@@ -1555,7 +1555,7 @@ Array Pathfinder::pathfind_sa_jpiada(int max_depth, bool allow_type_change, Vect
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP_C; ++action_id) {
                 if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
                     continue;
                 }
@@ -1634,7 +1634,7 @@ Array Pathfinder::pathfind_sa_jpiadanr(int max_depth, bool allow_type_change, Ve
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
-            for (int action_id=ActionId::SLIDE; action_id != ActionId::CONSTRAINED_JUMP; ++action_id) {
+            for (int action_id=ActionId::SLIDE; action_id != ActionId::JUMP_C; ++action_id) {
                 if (action_id == ActionId::SLIDE && is_tile_empty_and_regular(curr->sanode->get_lv_sid(curr->sanode->lv_pos + dir))) {
                     continue;
                 }
@@ -1700,7 +1700,7 @@ Array Pathfinder::pathfind_sa_cjpd(int max_depth, bool allow_type_change, Vector
             if (!curr->sanode->get_dist_to_lv_edge(curr->sanode->lv_pos, dir)) {
                 continue;
             }
-            for (int action_id : {ActionId::SLIDE, ActionId::SPLIT, ActionId::CONSTRAINED_JUMP}) {
+            for (int action_id : {ActionId::SLIDE, ActionId::SPLIT, ActionId::JUMP_C}) {
                 //generate split in all dirs, don't generate slide if next tile is empty_and_regular
                 //generate jump iff next tile is empty_and_regular and dir is natural - handled in try_jump()
                 //only search in dir of natural neighbors (except first node) - handled via pruning

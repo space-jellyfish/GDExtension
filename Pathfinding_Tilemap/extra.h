@@ -724,3 +724,22 @@ inconsistent_abstract_dists[goal_pos].best_gs.emplace(goal_pos, 0);
                 //manhattan is consistent, so final path_len >= curr->f and f is monotonically increasing
                 //f can increase more than one unit at a time, so == check when expanding doesn't work
                 //if curr->g == max_depth, neighbor->g > max_depth, neighbor->f > max_depth, so no nodes are generated from max_depth
+
+/*
+        //check if visited with equal or better dist? but lookup is slow
+        auto it = open.find(curr_jp);
+        if (it != nullptr) {
+            int curr_g = g + curr_dist;
+            if (it->g <= curr_g) {
+                //see Pictures/node_along_jump_that_is_visited_with_better_g_handles_remainder_of_jump
+                transfer_neighbors(it, curr_g - it->g);
+                it->neighbors[Vector3i(-dir.x, -dir.y, ActionId::JUMP)] = {static_cast<unsigned int>(2 * curr_dist + 1), nullptr, 0};
+                return nullptr;
+            }
+            else {
+                //found better path, declare curr_jp as jump point
+                //search function handles neighbor transfer
+                return curr_jp;
+            }
+        }
+*/

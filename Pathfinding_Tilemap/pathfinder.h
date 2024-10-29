@@ -10,6 +10,7 @@
 #include <unordered_set>
 #include <set>
 #include <queue>
+#include <bitset>
 #include "obj_pool.h"
 #include "OpenClosedList.h"
 
@@ -132,7 +133,9 @@ enum ActionId {
 	SLIDE,
 	SPLIT,
     JUMP,
-    CONSTRAINED_JUMP,
+    JUMP_C, //constrained
+    JUMP_IP, //with intermediate pruning
+    JUMP_IPC,
 	ACTION_END,
 };
 

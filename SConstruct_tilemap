@@ -3,7 +3,6 @@ import os
 import sys
 
 env = SConscript("godot-cpp/SConstruct")
-print(env['CXXFLAGS'])
 
 # For reference:
 # - CCFLAGS are compilation flags shared between C and C++
@@ -13,10 +12,14 @@ print(env['CXXFLAGS'])
 # - CPPDEFINES are for pre-processor defines
 # - LINKFLAGS are for linking flags
 
-#env.Append(CXXFLAGS=['-stdlib=libc++', '-std=c++20']);
-env.Append(CXXFLAGS=['-stdlib=libc++']);
-env.Append(LINKFLAGS=['-stdlib=libc++']);
+if env['CC'] == 'clang':
+    env.Append(CXXFLAGS=['-stdlib=libc++', '-std=c++17'])
+    env.Append(LINKFLAGS=['-stdlib=libc++'])
+elif env['CC'] == 'gcc':
+    env.Append(CXXFLAGS=['-stdlib=libstdc++', '/std:c++17'])
+    env.Append(LINKFLAGS=['-stdlib=libstdc++'])
 #env.Append(CXXFLAGS=["-O3"])
+print(env['CXXFLAGS'])
 
 # tweak this if you want to use different folders, or more folders, to store your source code in.
 env.Append(CPPPATH="Pathfinding_Tilemap/")
@@ -24,6 +27,10 @@ env.Append(CPPPATH="Pathfinding_Tilemap/open_list_hog/")
 src = Glob("Pathfinding_Tilemap/*.cpp")
 
 if env['platform'] == 'macos':
+	libpath = 'pathfinder{}{}'.format( env['suffix'], env['SHLIBSUFFIX'] );
+	sharedlib = env.SharedLibrary(libpath, src);
+	Default(sharedlib);
+elif env['platform'] == 'windows':
 	libpath = 'pathfinder{}{}'.format( env['suffix'], env['SHLIBSUFFIX'] );
 	sharedlib = env.SharedLibrary(libpath, src);
 	Default(sharedlib);
