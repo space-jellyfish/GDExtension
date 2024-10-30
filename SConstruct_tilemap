@@ -31,6 +31,6 @@ if env['platform'] == 'macos':
 	sharedlib = env.SharedLibrary(libpath, src);
 	Default(sharedlib);
 elif env['platform'] == 'windows':
-	libpath = 'pathfinder{}{}'.format( env['suffix'], env['SHLIBSUFFIX'] );
+	libpath = 'libpathfinder{}{}'.format( env['suffix'], env['SHLIBSUFFIX'] );
 	sharedlib = env.SharedLibrary(libpath, src);
 	Default(sharedlib);
