@@ -65,6 +65,7 @@ enum BackId {
 	RED_WALL,
 	SAVEPOINT,
 	GOAL,
+    BOARD_FRAME,
 };
 
 enum LayerId {

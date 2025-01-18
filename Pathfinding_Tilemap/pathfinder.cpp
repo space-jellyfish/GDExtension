@@ -173,7 +173,7 @@ uint16_t reset_back_id(uint16_t stuff_id) {
 }
 
 bool is_compatible(uint8_t type_id, uint8_t back_id) {
-    if (back_id == BackId::NONE) {
+    if (back_id == BackId::NONE || back_id == BackId::BOARD_FRAME) {
         return true;
     }
     if (B_WALL_OR_BORDER.find(back_id) != B_WALL_OR_BORDER.end()) {
