@@ -28,6 +28,7 @@ void Pathfinder::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_player_pos", "pos"), &Pathfinder::set_player_pos);
     ClassDB::bind_method(D_METHOD("set_player_last_dir", "dir"), &Pathfinder::set_player_last_dir);
 	ClassDB::bind_method(D_METHOD("set_tilemap", "t"), &Pathfinder::set_tilemap);
+    ClassDB::bind_method(D_METHOD("set_world", "w"), &Pathfinder::set_world);
     ClassDB::bind_method(D_METHOD("set_tile_push_limits", "tpls"), &Pathfinder::set_tile_push_limits);
     ClassDB::bind_method(D_METHOD("generate_hash_keys"), &Pathfinder::generate_hash_keys);
     ClassDB::bind_method(D_METHOD("init_sa_pool"), &Pathfinder::init_sa_pool);
@@ -923,7 +924,7 @@ void SAPISearchNode::init_lapi(unique_ptr<PathInfo>& pi, Vector2i dir) {
     update_lapi_helpers(pi, affected_lv_pos, largest_prev_path_indices, largest_affected_lp_path_index, penultimate_affected_lp_path_index);
 
     //ignore prev pushed if prev h_reduced and prev_action on prev_path
-    if (prev->virtual_path_index != -1 && prev_action == pi->normalized_actions[prev->virtual_path_index]) {
+    if (prev->virtual_path_index != -1 && prev_action == (Vector3i)pi->normalized_actions[prev->virtual_path_index]) {
         update_lapi(largest_prev_path_indices, largest_affected_path_index);
         return;
     }
@@ -1770,6 +1771,10 @@ void Pathfinder::set_player_last_dir(Vector2i dir) {
 
 void Pathfinder::set_tilemap(TileMap* t) {
     cells = t;
+}
+
+void Pathfinder::set_world(Node2D* w) {
+    world = w;
 }
 
 void Pathfinder::set_tile_push_limits(Dictionary tpls) {

@@ -6,6 +6,7 @@
 #include <godot_cpp/classes/tile_map.hpp>
 //#include <godot_cpp/classes/gd_script.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
+//#include <godot_cpp/variant/variant.hpp>
 #include <unordered_map>
 #include <unordered_set>
 #include <set>
@@ -587,6 +588,7 @@ private:
     Vector2i player_pos;
     Vector2i player_last_dir;
     //GDScript* GV;
+    Node2D* world;
 
 protected:
     static void _bind_methods();
@@ -616,6 +618,7 @@ public:
     void set_player_pos(Vector2i pos);
     void set_player_last_dir(Vector2i dir);
     void set_tilemap(TileMap* t);
+    void set_world(Node2D* w);
     void set_tile_push_limits(Dictionary tpls);
     void generate_hash_keys();
     void init_sa_pool(int n);
